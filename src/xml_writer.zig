@@ -1,5 +1,3 @@
-//! XML writing for SPD-SX configuration files
-
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const types = @import("types.zig");

@@ -1,6 +1,6 @@
-# SPD-SX Editor (Zig Port)
+# SpeedSX
 
-A command-line editor for Roland SPD-SX Sampling Pad configuration files, ported from Java to Zig.
+A command-line editor for Roland SPD-SX Sampling Pad configuration files
 
 ## Features
 
@@ -20,7 +20,7 @@ cd zig-project
 zig build
 ```
 
-The executable will be created at `zig-out/bin/spd-sx-editor`.
+The executable will be created at `zig-out/bin/speedsx`.
 
 ### Build Modes
 
@@ -41,9 +41,9 @@ zig build test
 ## Usage
 
 ```
-SPD-SX Editor - Roland SPD-SX Configuration Tool
+SpeedSX - Roland SPD-SX Configuration Tool
 
-Usage: spd-sx-editor <command> [options]
+Usage: speedsx <command> [options]
 
 Commands:
   load <path>           Load configuration from SPD-SX SD card path
@@ -70,59 +70,59 @@ Commands:
 
 ```bash
 # Mount your SPD-SX SD card and load the configuration
-spd-sx-editor load /media/SPD_SX
+speedsx load /media/SPD_SX
 
 # On macOS
-spd-sx-editor load /Volumes/SPD_SX
+speedsx load /Volumes/SPD_SX
 ```
 
 ### List and view kits
 
 ```bash
 # List all kits
-spd-sx-editor list-kits
+speedsx list-kits
 
 # Show details of kit #0
-spd-sx-editor show-kit 0
+speedsx show-kit 0
 ```
 
 ### Edit kits
 
 ```bash
 # Rename kit #0
-spd-sx-editor rename-kit 0 "My Kit"
+speedsx rename-kit 0 "My Kit"
 
 # Create a new kit
-spd-sx-editor create-kit
+speedsx create-kit
 
 # Swap kits 0 and 1
-spd-sx-editor swap-kits 0 1
+speedsx swap-kits 0 1
 
 # Delete kit #5
-spd-sx-editor delete-kit 5
+speedsx delete-kit 5
 ```
 
 ### Work with waves
 
 ```bash
 # List all waves
-spd-sx-editor list-waves
+speedsx list-waves
 
 # Show wave details
-spd-sx-editor show-wave 0
+speedsx show-wave 0
 
 # Rename a wave
-spd-sx-editor rename-wave 0 "Kick 1"
+speedsx rename-wave 0 "Kick 1"
 ```
 
 ### Save changes
 
 ```bash
 # Save back to SD card
-spd-sx-editor save /media/SPD_SX
+speedsx save /media/SPD_SX
 
 # Export to a different location
-spd-sx-editor export /path/to/backup
+speedsx export /path/to/backup
 ```
 
 ## SPD-SX File Structure
@@ -201,21 +201,6 @@ zig-project/
     ├── xml.zig         # XML parsing for .spd files
     └── xml_writer.zig  # XML writing for .spd files
 ```
-
-## Differences from Java Version
-
-This Zig port is a command-line application, while the original Java version had a JavaFX GUI. The core functionality is preserved:
-
-- ✅ Load/save SPD-SX configuration files
-- ✅ Edit kit names, settings, and pad assignments
-- ✅ Edit wave names and metadata
-- ✅ Manage tags and kit chains
-- ❌ GUI interface (CLI only)
-- ❌ Audio preview (requires audio library integration)
-
-## License
-
-This is a port of the SPD-SX Editor. Please refer to the original project for licensing information.
 
 ## Contributing
 

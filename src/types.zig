@@ -1,6 +1,3 @@
-//! Core data types for SPD-SX Editor
-//! Zig port of the Java business classes
-
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 

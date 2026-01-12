@@ -1,6 +1,3 @@
-//! Character encoding utilities for SPD-SX
-//! Handles conversion between ASCII codes and characters used in kit/wave names
-
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 

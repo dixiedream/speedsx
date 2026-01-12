@@ -1,6 +1,3 @@
-//! In-memory storage layer for SPD-SX data
-//! Equivalent to Java DAO Mock classes
-
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const types = @import("types.zig");
@@ -10,7 +7,6 @@ const Wave = types.Wave;
 const TagListEntry = types.TagListEntry;
 const KitChain = types.KitChain;
 
-/// Storage for kits
 pub const KitStorage = struct {
     kits: std.ArrayListUnmanaged(Kit),
     allocator: Allocator,
