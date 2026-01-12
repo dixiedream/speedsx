@@ -1,15 +1,3 @@
-//! SPD-SX Editor - Zig Port
-//!
-//! A command-line editor for Roland SPD-SX drum pad configuration files.
-//! Ported from the Java version.
-//!
-//! Features:
-//! - Load and save SPD-SX configuration from SD card
-//! - List, view, and edit kits
-//! - List, view, and edit waves
-//! - Manage tags and kit chains
-//! - Export configurations
-
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
@@ -94,9 +82,9 @@ fn printVersion(writer: anytype) !void {
 
 /// Load configuration from SPD-SX path
 fn loadConfiguration(app: *App, path: []const u8) !void {
-    const stdout = getStdOutWriter();
+    // const stdout = getStdOutWriter();
 
-    try stdout.print("Loading configuration from: {s}\n", .{path});
+    std.debug.print("Loading configuration from: {s}\n", .{path});
 
     // Clear existing data
     app.data_store.clear();
@@ -175,7 +163,7 @@ fn loadConfiguration(app: *App, path: []const u8) !void {
     }
     app.loaded_path = try app.allocator.dupe(u8, path);
 
-    try stdout.print("Loaded {d} kits, {d} waves, {d} tags, {d} kit chains\n", .{
+    std.debug.print("Loaded {d} kits, {d} waves, {d} tags, {d} kit chains\n", .{
         kit_count,
         wave_count,
         app.data_store.tags.size(),
@@ -191,18 +179,18 @@ fn pathExists(path: []const u8) bool {
 
 /// List all kits
 fn listKits(app: *App) !void {
-    const stdout = getStdOutWriter();
+    // const stdout = getStdOutWriter();
     const kits = app.data_store.kits.getAll();
 
     if (kits.len == 0) {
-        try stdout.writeAll("No kits loaded. Use 'load <path>' to load configuration.\n");
+        try std.fs.File.stdout().writeAll("No kits loaded. Use 'load <path>' to load configuration.\n");
         return;
     }
 
-    try stdout.print("Kits ({d} total):\n", .{kits.len});
-    try stdout.writeAll("─────────────────────────────────────────\n");
-    try stdout.writeAll(" #   Name             Level  Tempo\n");
-    try stdout.writeAll("─────────────────────────────────────────\n");
+    std.debug.print("Kits ({d} total):\n", .{kits.len});
+    try std.fs.File.stdout().writeAll("─────────────────────────────────────────\n");
+    try std.fs.File.stdout().writeAll(" #   Name             Level  Tempo\n");
+    try std.fs.File.stdout().writeAll("─────────────────────────────────────────\n");
 
     for (kits, 0..) |*kit, i| {
         const name = kit.getName(app.allocator) catch "[error]";
@@ -215,7 +203,7 @@ fn listKits(app: *App) !void {
 
         const tempo_f: f64 = @as(f64, @floatFromInt(kit.tempo)) / 10.0;
 
-        try stdout.print("{d:>3}  {s}  {d:>5}  {d:>6.1}\n", .{
+        std.debug.print("{d:>3}  {s}  {d:>5}  {d:>6.1}\n", .{
             i,
             &name_buf,
             kit.level,
@@ -226,18 +214,18 @@ fn listKits(app: *App) !void {
 
 /// List all waves
 fn listWaves(app: *App) !void {
-    const stdout = getStdOutWriter();
+    // const stdout = getStdOutWriter();
     const waves = app.data_store.waves.getAll();
 
     if (waves.len == 0) {
-        try stdout.writeAll("No waves loaded. Use 'load <path>' to load configuration.\n");
+        try std.fs.File.stdout().writeAll("No waves loaded. Use 'load <path>' to load configuration.\n");
         return;
     }
 
-    try stdout.print("Waves ({d} total):\n", .{waves.len});
-    try stdout.writeAll("───────────────────────────────────────────────\n");
-    try stdout.writeAll("  ID   Name              Tag  Path\n");
-    try stdout.writeAll("───────────────────────────────────────────────\n");
+    std.debug.print("Waves ({d} total):\n", .{waves.len});
+    try std.fs.File.stdout().writeAll("───────────────────────────────────────────────\n");
+    try std.fs.File.stdout().writeAll("  ID   Name              Tag  Path\n");
+    try std.fs.File.stdout().writeAll("───────────────────────────────────────────────\n");
 
     for (waves) |*wave| {
         const name = wave.getName(app.allocator) catch "[error]";
@@ -250,7 +238,7 @@ fn listWaves(app: *App) !void {
         const path = wave.getPath();
         const display_path = if (path.len > 20) path[path.len - 20 ..] else path;
 
-        try stdout.print("{d:>4}  {s}  {d:>3}  {s}\n", .{
+        std.debug.print("{d:>4}  {s}  {d:>3}  {s}\n", .{
             wave.wave_id,
             &name_buf,
             wave.tag,
@@ -261,24 +249,24 @@ fn listWaves(app: *App) !void {
 
 /// List all tags
 fn listTags(app: *App) !void {
-    const stdout = getStdOutWriter();
+    // const stdout = getStdOutWriter();
     const tags = app.data_store.tags.getAll();
 
     if (tags.len == 0) {
-        try stdout.writeAll("No tags loaded.\n");
+        try std.fs.File.stdout().writeAll("No tags loaded.\n");
         return;
     }
 
-    try stdout.print("Tags ({d} total):\n", .{tags.len});
-    try stdout.writeAll("───────────────────────────\n");
-    try stdout.writeAll("  #   Name          Order\n");
-    try stdout.writeAll("───────────────────────────\n");
+    std.debug.print("Tags ({d} total):\n", .{tags.len});
+    try std.fs.File.stdout().writeAll("───────────────────────────\n");
+    try std.fs.File.stdout().writeAll("  #   Name          Order\n");
+    try std.fs.File.stdout().writeAll("───────────────────────────\n");
 
     for (tags, 0..) |*tag, i| {
         const name = tag.getName(app.allocator) catch "[error]";
         defer if (!std.mem.eql(u8, name, "[error]")) app.allocator.free(name);
 
-        try stdout.print("{d:>3}  {s:<12}  {d:>3}\n", .{
+        std.debug.print("{d:>3}  {s:<12}  {d:>3}\n", .{
             i,
             name,
             tag.order,
@@ -288,35 +276,35 @@ fn listTags(app: *App) !void {
 
 /// List all kit chains
 fn listChains(app: *App) !void {
-    const stdout = getStdOutWriter();
+    // const stdout = getStdOutWriter();
     const chains = app.data_store.kit_chains.getAll();
 
     if (chains.len == 0) {
-        try stdout.writeAll("No kit chains loaded.\n");
+        try std.fs.File.stdout().writeAll("No kit chains loaded.\n");
         return;
     }
 
-    try stdout.print("Kit Chains ({d} total):\n", .{chains.len});
-    try stdout.writeAll("─────────────────────────────────────────────────\n");
+    std.debug.print("Kit Chains ({d} total):\n", .{chains.len});
+    try std.fs.File.stdout().writeAll("─────────────────────────────────────────────────\n");
 
     for (chains, 0..) |*chain, i| {
         const name = chain.getName(app.allocator) catch "[error]";
         defer if (!std.mem.eql(u8, name, "[error]")) app.allocator.free(name);
 
-        try stdout.print("{d:>3}  {s}: ", .{ i, name });
+        std.debug.print("{d:>3}  {s}: ", .{ i, name });
 
         // Print steps
         for (chain.steps) |step| {
             if (step == -1) break;
-            try stdout.print("{d} ", .{step});
+            std.debug.print("{d} ", .{step});
         }
-        try stdout.writeAll("\n");
+        try std.fs.File.stdout().writeAll("\n");
     }
 }
 
 /// Show kit details
 fn showKit(app: *App, index: usize) !void {
-    const stdout = getStdOutWriter();
+    // const stdout = getStdOutWriter();
 
     if (app.data_store.kits.get(index)) |kit| {
         const name = kit.getName(app.allocator) catch "[error]";
@@ -327,7 +315,7 @@ fn showKit(app: *App, index: usize) !void {
 
         const tempo_f: f64 = @as(f64, @floatFromInt(kit.tempo)) / 10.0;
 
-        try stdout.print(
+        std.debug.print(
             \\Kit {d}: {s}
             \\════════════════════════════════════════════════
             \\  Sub-name:    {s}
@@ -362,7 +350,7 @@ fn showKit(app: *App, index: usize) !void {
             const pan_text = encoding.getPanText(pad.wv_pan);
             const midi_ch_text = types.Pad.getMidiChText(pad.pad_midi_ch);
 
-            try stdout.print("{d:>3}  {d:>6}  {d:>5}  {s:<7}  {s:<7}  {d}\n", .{
+            std.debug.print("{d:>3}  {d:>6}  {d:>5}  {s:<7}  {s:<7}  {d}\n", .{
                 i + 1,
                 pad.wv,
                 pad.wv_level,
@@ -372,19 +360,19 @@ fn showKit(app: *App, index: usize) !void {
             });
         }
     } else {
-        try stdout.print("Kit {d} not found.\n", .{index});
+        std.debug.print("Kit {d} not found.\n", .{index});
     }
 }
 
 /// Show wave details
 fn showWave(app: *App, index: usize) !void {
-    const stdout = getStdOutWriter();
+    // const stdout = getStdOutWriter();
 
     if (app.data_store.waves.get(index)) |wave| {
         const name = wave.getName(app.allocator) catch "[error]";
         defer if (!std.mem.eql(u8, name, "[error]")) app.allocator.free(name);
 
-        try stdout.print(
+        std.debug.print(
             \\Wave {d}: {s}
             \\════════════════════════════════════════════════
             \\  Wave ID:    {d}
@@ -409,79 +397,79 @@ fn showWave(app: *App, index: usize) !void {
             wave.end,
         });
     } else {
-        try stdout.print("Wave {d} not found.\n", .{index});
+        std.debug.print("Wave {d} not found.\n", .{index});
     }
 }
 
 /// Rename a kit
 fn renameKit(app: *App, index: usize, new_name: []const u8) !void {
-    const stdout = getStdOutWriter();
+    // const stdout = getStdOutWriter();
 
     if (app.data_store.kits.getMut(index)) |kit| {
         kit.setName(new_name);
-        try stdout.print("Kit {d} renamed to: {s}\n", .{ index, new_name });
+        std.debug.print("Kit {d} renamed to: {s}\n", .{ index, new_name });
     } else {
-        try stdout.print("Kit {d} not found.\n", .{index});
+        std.debug.print("Kit {d} not found.\n", .{index});
     }
 }
 
 /// Rename a wave
 fn renameWave(app: *App, index: usize, new_name: []const u8) !void {
-    const stdout = getStdOutWriter();
+    // const stdout = getStdOutWriter();
 
     if (app.data_store.waves.getMut(index)) |wave| {
         wave.setName(new_name);
         wave.modified = true;
-        try stdout.print("Wave {d} renamed to: {s}\n", .{ index, new_name });
+        std.debug.print("Wave {d} renamed to: {s}\n", .{ index, new_name });
     } else {
-        try stdout.print("Wave {d} not found.\n", .{index});
+        std.debug.print("Wave {d} not found.\n", .{index});
     }
 }
 
 /// Create a new kit
 fn createKit(app: *App) !void {
-    const stdout = getStdOutWriter();
+    // const stdout = getStdOutWriter();
 
     var kit = Kit.init();
     kit.kit_id = @intCast(app.data_store.kits.size());
     try app.data_store.kits.insert(kit);
 
-    try stdout.print("Created new kit at index {d}\n", .{kit.kit_id});
+    std.debug.print("Created new kit at index {d}\n", .{kit.kit_id});
 }
 
 /// Delete a kit
 fn deleteKit(app: *App, index: usize) !void {
-    const stdout = getStdOutWriter();
+    // const stdout = getStdOutWriter();
 
     if (index < app.data_store.kits.size()) {
         app.data_store.kits.delete(index);
         app.data_store.kit_chains.updateKitReferences(&app.data_store.kits);
-        try stdout.print("Deleted kit {d}\n", .{index});
+        std.debug.print("Deleted kit {d}\n", .{index});
     } else {
-        try stdout.print("Kit {d} not found.\n", .{index});
+        std.debug.print("Kit {d} not found.\n", .{index});
     }
 }
 
 /// Swap two kits
 fn swapKits(app: *App, idx_a: usize, idx_b: usize) !void {
-    const stdout = getStdOutWriter();
+    // const stdout = getStdOutWriter();
 
     if (idx_a < app.data_store.kits.size() and idx_b < app.data_store.kits.size()) {
         app.data_store.kits.swap(idx_a, idx_b);
         app.data_store.kit_chains.updateKitReferences(&app.data_store.kits);
-        try stdout.print("Swapped kits {d} and {d}\n", .{ idx_a, idx_b });
+        std.debug.print("Swapped kits {d} and {d}\n", .{ idx_a, idx_b });
     } else {
-        try stdout.writeAll("Invalid kit indices.\n");
+        try std.fs.File.stdout().writeAll("Invalid kit indices.\n");
     }
 }
 
 /// Save configuration
 fn saveConfiguration(app: *App, path: []const u8) !void {
-    const stdout = getStdOutWriter();
+    // const stdout = getStdOutWriter();
 
-    try stdout.print("Saving configuration to: {s}\n", .{path});
+    std.debug.print("Saving configuration to: {s}\n", .{path});
     try xml_writer.exportConfiguration(&app.data_store, path, app.allocator);
-    try stdout.writeAll("Configuration saved successfully.\n");
+    try std.fs.File.stdout().writeAll("Configuration saved successfully.\n");
 }
 
 /// Buffered writer for stdout
@@ -514,134 +502,320 @@ fn getStdErrWriter() StdErrWriter {
 }
 
 /// Main entry point
+// pub fn main() !void {
+//     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+//     defer _ = gpa.deinit();
+//     const allocator = gpa.allocator();
+//
+//     const stdout = getStdOutWriter();
+//     const stderr = getStdErrWriter();
+//
+//     var app = App.init(allocator);
+//     defer app.deinit();
+//
+//     const args = try std.process.argsAlloc(allocator);
+//     defer std.process.argsFree(allocator, args);
+//
+//     if (args.len < 2) {
+//         try printUsage(stdout);
+//         return;
+//     }
+//
+//     const command = args[1];
+//
+//     if (std.mem.eql(u8, command, "help") or std.mem.eql(u8, command, "-h") or std.mem.eql(u8, command, "--help")) {
+//         try printUsage(stdout);
+//     } else if (std.mem.eql(u8, command, "version") or std.mem.eql(u8, command, "-v") or std.mem.eql(u8, command, "--version")) {
+//         try printVersion(stdout);
+//     } else if (std.mem.eql(u8, command, "load")) {
+//         if (args.len < 3) {
+//             try stderr.writeAll("Error: 'load' requires a path argument.\n");
+//             return;
+//         }
+//         loadConfiguration(&app, args[2]) catch |err| {
+//             try stderr.print("Error loading configuration: {}\n", .{err});
+//         };
+//     } else if (std.mem.eql(u8, command, "save")) {
+//         if (args.len < 3) {
+//             try stderr.writeAll("Error: 'save' requires a path argument.\n");
+//             return;
+//         }
+//         saveConfiguration(&app, args[2]) catch |err| {
+//             try stderr.print("Error saving configuration: {}\n", .{err});
+//         };
+//     } else if (std.mem.eql(u8, command, "list-kits")) {
+//         try listKits(&app);
+//     } else if (std.mem.eql(u8, command, "list-waves")) {
+//         try listWaves(&app);
+//     } else if (std.mem.eql(u8, command, "list-tags")) {
+//         try listTags(&app);
+//     } else if (std.mem.eql(u8, command, "list-chains")) {
+//         try listChains(&app);
+//     } else if (std.mem.eql(u8, command, "show-kit")) {
+//         if (args.len < 3) {
+//             try stderr.writeAll("Error: 'show-kit' requires an index argument.\n");
+//             return;
+//         }
+//         const index = std.fmt.parseInt(usize, args[2], 10) catch {
+//             try stderr.writeAll("Error: Invalid kit index.\n");
+//             return;
+//         };
+//         try showKit(&app, index);
+//     } else if (std.mem.eql(u8, command, "show-wave")) {
+//         if (args.len < 3) {
+//             try stderr.writeAll("Error: 'show-wave' requires an index argument.\n");
+//             return;
+//         }
+//         const index = std.fmt.parseInt(usize, args[2], 10) catch {
+//             try stderr.writeAll("Error: Invalid wave index.\n");
+//             return;
+//         };
+//         try showWave(&app, index);
+//     } else if (std.mem.eql(u8, command, "rename-kit")) {
+//         if (args.len < 4) {
+//             try stderr.writeAll("Error: 'rename-kit' requires index and name arguments.\n");
+//             return;
+//         }
+//         const index = std.fmt.parseInt(usize, args[2], 10) catch {
+//             try stderr.writeAll("Error: Invalid kit index.\n");
+//             return;
+//         };
+//         try renameKit(&app, index, args[3]);
+//     } else if (std.mem.eql(u8, command, "rename-wave")) {
+//         if (args.len < 4) {
+//             try stderr.writeAll("Error: 'rename-wave' requires index and name arguments.\n");
+//             return;
+//         }
+//         const index = std.fmt.parseInt(usize, args[2], 10) catch {
+//             try stderr.writeAll("Error: Invalid wave index.\n");
+//             return;
+//         };
+//         try renameWave(&app, index, args[3]);
+//     } else if (std.mem.eql(u8, command, "create-kit")) {
+//         try createKit(&app);
+//     } else if (std.mem.eql(u8, command, "delete-kit")) {
+//         if (args.len < 3) {
+//             try stderr.writeAll("Error: 'delete-kit' requires an index argument.\n");
+//             return;
+//         }
+//         const index = std.fmt.parseInt(usize, args[2], 10) catch {
+//             try stderr.writeAll("Error: Invalid kit index.\n");
+//             return;
+//         };
+//         try deleteKit(&app, index);
+//     } else if (std.mem.eql(u8, command, "swap-kits")) {
+//         if (args.len < 4) {
+//             try stderr.writeAll("Error: 'swap-kits' requires two index arguments.\n");
+//             return;
+//         }
+//         const idx_a = std.fmt.parseInt(usize, args[2], 10) catch {
+//             try stderr.writeAll("Error: Invalid first kit index.\n");
+//             return;
+//         };
+//         const idx_b = std.fmt.parseInt(usize, args[3], 10) catch {
+//             try stderr.writeAll("Error: Invalid second kit index.\n");
+//             return;
+//         };
+//         try swapKits(&app, idx_a, idx_b);
+//     } else if (std.mem.eql(u8, command, "export")) {
+//         if (args.len < 3) {
+//             try stderr.writeAll("Error: 'export' requires a path argument.\n");
+//             return;
+//         }
+//         saveConfiguration(&app, args[2]) catch |err| {
+//             try stderr.print("Error exporting configuration: {}\n", .{err});
+//         };
+//     } else {
+//         try stderr.print("Unknown command: {s}\n", .{command});
+//         try stderr.writeAll("Use 'spd-sx-editor help' for usage information.\n");
+//     }
+// }
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const stdout = getStdOutWriter();
-    const stderr = getStdErrWriter();
+    var stdin_buf: [1024]u8 = undefined;
+    var stdin_reader = std.fs.File.stdin().reader(&stdin_buf);
+    const stdin: *std.io.Reader = &stdin_reader.interface;
+
+    var stderr_buf: [1024]u8 = undefined;
+    var stderr_writer = std.fs.File.stderr().writer(&stderr_buf);
+    const stderr: *std.io.Writer = &stderr_writer.interface;
 
     var app = App.init(allocator);
     defer app.deinit();
 
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+    try std.fs.File.stdout().writeAll("=== SPD‑SX Editor Interactive Mode ===\n");
 
-    if (args.len < 2) {
-        try printUsage(stdout);
-        return;
-    }
+    // var buf: [256]u8 = undefined;
 
-    const command = args[1];
+    main_loop: while (true) {
+        try std.fs.File.stdout().writeAll(
+            \\-----------------------------------------
+            \\1) Load configuration
+            \\2) Save configuration
+            \\3) List kits
+            \\4) List waves
+            \\5) List tags
+            \\6) List chains
+            \\7) Show kit
+            \\8) Show wave
+            \\9) Rename kit
+            \\10) Rename wave
+            \\11) Create kit
+            \\12) Delete kit
+            \\13) Swap kits
+            \\14) Export configuration
+            \\q) Quit
+            \\-----------------------------------------
+            \\Choice:
+        );
 
-    if (std.mem.eql(u8, command, "help") or std.mem.eql(u8, command, "-h") or std.mem.eql(u8, command, "--help")) {
-        try printUsage(stdout);
-    } else if (std.mem.eql(u8, command, "version") or std.mem.eql(u8, command, "-v") or std.mem.eql(u8, command, "--version")) {
-        try printVersion(stdout);
-    } else if (std.mem.eql(u8, command, "load")) {
-        if (args.len < 3) {
-            try stderr.writeAll("Error: 'load' requires a path argument.\n");
-            return;
+        const bare_line = try stdin.takeDelimiter('\n') orelse unreachable;
+        // const line = std.mem.trim(u8, bare_line, "\r");
+        const choice = std.mem.trim(u8, bare_line, " \t\r\n");
+
+        if (choice.len == 0) continue;
+
+        if (std.mem.eql(u8, choice, "q")) {
+            try std.fs.File.stdout().writeAll("Goodbye!\n");
+            break :main_loop;
         }
-        loadConfiguration(&app, args[2]) catch |err| {
-            try stderr.print("Error loading configuration: {}\n", .{err});
+
+        // Convert numeric choices
+        const num = std.fmt.parseInt(u32, choice, 10) catch {
+            try stderr.writeAll("Invalid choice.\n");
+            continue;
         };
-    } else if (std.mem.eql(u8, command, "save")) {
-        if (args.len < 3) {
-            try stderr.writeAll("Error: 'save' requires a path argument.\n");
-            return;
+
+        switch (num) {
+            1 => {
+                try std.fs.File.stdout().writeAll("Enter path to load: ");
+                const path = try stdin.takeDelimiter('\n');
+                if (path) |p| {
+                    loadConfiguration(&app, std.mem.trim(u8, p, " \t\r\n")) catch |err| {
+                        try stderr.print("Error loading: {}\n", .{err});
+                    };
+                }
+            },
+            2 => {
+                try std.fs.File.stdout().writeAll("Enter path to save: ");
+                const path = try stdin.takeDelimiter('\n');
+                if (path) |p| {
+                    saveConfiguration(&app, std.mem.trim(u8, p, " \t\r\n")) catch |err| {
+                        try stderr.print("Error saving: {}\n", .{err});
+                    };
+                }
+            },
+            3 => try listKits(&app),
+            4 => try listWaves(&app),
+            5 => try listTags(&app),
+            6 => try listChains(&app),
+
+            7 => {
+                try std.fs.File.stdout().writeAll("Kit index: ");
+                const idx_line = try stdin.takeDelimiter('\n');
+                if (idx_line) |p| {
+                    const idx = std.fmt.parseInt(usize, std.mem.trim(u8, p, " \t\r\n"), 10) catch {
+                        try stderr.writeAll("Invalid index.\n");
+                        continue;
+                    };
+                    try showKit(&app, idx);
+                }
+            },
+
+            8 => {
+                try std.fs.File.stdout().writeAll("Wave index: ");
+                const idx_line = try stdin.takeDelimiter('\n');
+                if (idx_line) |p| {
+                    const idx = std.fmt.parseInt(usize, std.mem.trim(u8, p, " \t\r\n"), 10) catch {
+                        try stderr.writeAll("Invalid index.\n");
+                        continue;
+                    };
+                    try showWave(&app, idx);
+                }
+            },
+
+            9 => {
+                try std.fs.File.stdout().writeAll("Kit index: ");
+                const idx_line = try stdin.takeDelimiter('\n');
+                try std.fs.File.stdout().writeAll("New name: ");
+                const name_line = try stdin.takeDelimiter('\n');
+
+                if (idx_line != null and name_line != null) {
+                    const idx = std.fmt.parseInt(usize, std.mem.trim(u8, idx_line.?, " \t\r\n"), 10) catch {
+                        try stderr.writeAll("Invalid index.\n");
+                        continue;
+                    };
+                    try renameKit(&app, idx, std.mem.trim(u8, name_line.?, " \t\r\n"));
+                }
+            },
+
+            10 => {
+                try std.fs.File.stdout().writeAll("Wave index: ");
+                const idx_line = try stdin.takeDelimiter('\n');
+                try std.fs.File.stdout().writeAll("New name: ");
+                const name_line = try stdin.takeDelimiter('\n');
+
+                if (idx_line != null and name_line != null) {
+                    const idx = std.fmt.parseInt(usize, std.mem.trim(u8, idx_line.?, " \t\r\n"), 10) catch {
+                        try stderr.writeAll("Invalid index.\n");
+                        continue;
+                    };
+                    try renameWave(&app, idx, std.mem.trim(u8, name_line.?, " \t\r\n"));
+                }
+            },
+
+            11 => try createKit(&app),
+
+            12 => {
+                try std.fs.File.stdout().writeAll("Kit index: ");
+                const idx_line = try stdin.takeDelimiter('\n');
+                if (idx_line) |p| {
+                    const idx = std.fmt.parseInt(usize, std.mem.trim(u8, p, " \t\r\n"), 10) catch {
+                        try stderr.writeAll("Invalid index.\n");
+                        continue;
+                    };
+                    try deleteKit(&app, idx);
+                }
+            },
+
+            13 => {
+                try std.fs.File.stdout().writeAll("First kit index: ");
+                const a_line = try stdin.takeDelimiter('\n');
+                try std.fs.File.stdout().writeAll("Second kit index: ");
+                const b_line = try stdin.takeDelimiter('\n');
+
+                if (a_line != null and b_line != null) {
+                    const idx_a = std.fmt.parseInt(usize, std.mem.trim(u8, a_line.?, " \t\r\n"), 10) catch {
+                        try stderr.writeAll("Invalid first index.\n");
+                        continue;
+                    };
+                    const idx_b = std.fmt.parseInt(usize, std.mem.trim(u8, b_line.?, " \t\r\n"), 10) catch {
+                        try stderr.writeAll("Invalid second index.\n");
+                        continue;
+                    };
+                    try swapKits(&app, idx_a, idx_b);
+                }
+            },
+
+            14 => {
+                try std.fs.File.stdout().writeAll("Export path: ");
+                const path = try stdin.takeDelimiter('\n');
+                if (path) |p| {
+                    saveConfiguration(&app, std.mem.trim(u8, p, " \t\r\n")) catch |err| {
+                        try stderr.print("Error exporting: {}\n", .{err});
+                    };
+                }
+            },
+
+            else => try stderr.writeAll("Unknown menu option.\n"),
         }
-        saveConfiguration(&app, args[2]) catch |err| {
-            try stderr.print("Error saving configuration: {}\n", .{err});
-        };
-    } else if (std.mem.eql(u8, command, "list-kits")) {
-        try listKits(&app);
-    } else if (std.mem.eql(u8, command, "list-waves")) {
-        try listWaves(&app);
-    } else if (std.mem.eql(u8, command, "list-tags")) {
-        try listTags(&app);
-    } else if (std.mem.eql(u8, command, "list-chains")) {
-        try listChains(&app);
-    } else if (std.mem.eql(u8, command, "show-kit")) {
-        if (args.len < 3) {
-            try stderr.writeAll("Error: 'show-kit' requires an index argument.\n");
-            return;
-        }
-        const index = std.fmt.parseInt(usize, args[2], 10) catch {
-            try stderr.writeAll("Error: Invalid kit index.\n");
-            return;
-        };
-        try showKit(&app, index);
-    } else if (std.mem.eql(u8, command, "show-wave")) {
-        if (args.len < 3) {
-            try stderr.writeAll("Error: 'show-wave' requires an index argument.\n");
-            return;
-        }
-        const index = std.fmt.parseInt(usize, args[2], 10) catch {
-            try stderr.writeAll("Error: Invalid wave index.\n");
-            return;
-        };
-        try showWave(&app, index);
-    } else if (std.mem.eql(u8, command, "rename-kit")) {
-        if (args.len < 4) {
-            try stderr.writeAll("Error: 'rename-kit' requires index and name arguments.\n");
-            return;
-        }
-        const index = std.fmt.parseInt(usize, args[2], 10) catch {
-            try stderr.writeAll("Error: Invalid kit index.\n");
-            return;
-        };
-        try renameKit(&app, index, args[3]);
-    } else if (std.mem.eql(u8, command, "rename-wave")) {
-        if (args.len < 4) {
-            try stderr.writeAll("Error: 'rename-wave' requires index and name arguments.\n");
-            return;
-        }
-        const index = std.fmt.parseInt(usize, args[2], 10) catch {
-            try stderr.writeAll("Error: Invalid wave index.\n");
-            return;
-        };
-        try renameWave(&app, index, args[3]);
-    } else if (std.mem.eql(u8, command, "create-kit")) {
-        try createKit(&app);
-    } else if (std.mem.eql(u8, command, "delete-kit")) {
-        if (args.len < 3) {
-            try stderr.writeAll("Error: 'delete-kit' requires an index argument.\n");
-            return;
-        }
-        const index = std.fmt.parseInt(usize, args[2], 10) catch {
-            try stderr.writeAll("Error: Invalid kit index.\n");
-            return;
-        };
-        try deleteKit(&app, index);
-    } else if (std.mem.eql(u8, command, "swap-kits")) {
-        if (args.len < 4) {
-            try stderr.writeAll("Error: 'swap-kits' requires two index arguments.\n");
-            return;
-        }
-        const idx_a = std.fmt.parseInt(usize, args[2], 10) catch {
-            try stderr.writeAll("Error: Invalid first kit index.\n");
-            return;
-        };
-        const idx_b = std.fmt.parseInt(usize, args[3], 10) catch {
-            try stderr.writeAll("Error: Invalid second kit index.\n");
-            return;
-        };
-        try swapKits(&app, idx_a, idx_b);
-    } else if (std.mem.eql(u8, command, "export")) {
-        if (args.len < 3) {
-            try stderr.writeAll("Error: 'export' requires a path argument.\n");
-            return;
-        }
-        saveConfiguration(&app, args[2]) catch |err| {
-            try stderr.print("Error exporting configuration: {}\n", .{err});
-        };
-    } else {
-        try stderr.print("Unknown command: {s}\n", .{command});
-        try stderr.writeAll("Use 'spd-sx-editor help' for usage information.\n");
     }
 }
+
 
 // Unit tests
 test "types module" {
