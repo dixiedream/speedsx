@@ -14,6 +14,10 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    // Link SDL2 from system
+    exe.linkSystemLibrary("SDL2");
+    exe.linkLibC();
+
     b.installArtifact(exe);
 
     // Run command
@@ -28,15 +32,15 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     // Tests
-    const unit_tests = b.addTest(.{
+    const test_models = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
+            .root_source_file = b.path("src/models.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
 
-    const run_unit_tests = b.addRunArtifact(unit_tests);
+    const run_tests = b.addRunArtifact(test_models);
     const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_unit_tests.step);
+    test_step.dependOn(&run_tests.step);
 }
