@@ -37,9 +37,9 @@ const App = struct {
 /// Print usage information
 fn printUsage(writer: anytype) !void {
     try writer.writeAll(
-        \\SPD-SX Editor - Roland SPD-SX Configuration Tool
+        \\SpeedSX - Roland SPD-SX Configuration Tool
         \\
-        \\Usage: spd-sx-editor <command> [options]
+        \\Usage: speedsx <command> [options]
         \\
         \\Commands:
         \\  load <path>           Load configuration from SPD-SX SD card path
@@ -60,11 +60,11 @@ fn printUsage(writer: anytype) !void {
         \\  version               Show version information
         \\
         \\Examples:
-        \\  spd-sx-editor load /media/SD_CARD
-        \\  spd-sx-editor list-kits
-        \\  spd-sx-editor show-kit 0
-        \\  spd-sx-editor rename-kit 0 "My Kit"
-        \\  spd-sx-editor save /media/SD_CARD
+        \\  speedsx load /media/SD_CARD
+        \\  speedsx list-kits
+        \\  speedsx show-kit 0
+        \\  speedsx rename-kit 0 "My Kit"
+        \\  speedsx save /media/SD_CARD
         \\
     );
 }
@@ -72,8 +72,7 @@ fn printUsage(writer: anytype) !void {
 /// Print version information
 fn printVersion(writer: anytype) !void {
     try writer.writeAll(
-        \\SPD-SX Editor v1.0.0
-        \\Zig port of the Java SPD-SX Editor
+        \\SpeedSX v1.0.0
         \\
         \\For Roland SPD-SX Sampling Pad
         \\
@@ -428,8 +427,6 @@ fn renameWave(app: *App, index: usize, new_name: []const u8) !void {
 
 /// Create a new kit
 fn createKit(app: *App) !void {
-    // const stdout = getStdOutWriter();
-
     var kit = Kit.init();
     kit.kit_id = @intCast(app.data_store.kits.size());
     try app.data_store.kits.insert(kit);
@@ -439,8 +436,6 @@ fn createKit(app: *App) !void {
 
 /// Delete a kit
 fn deleteKit(app: *App, index: usize) !void {
-    // const stdout = getStdOutWriter();
-
     if (index < app.data_store.kits.size()) {
         app.data_store.kits.delete(index);
         app.data_store.kit_chains.updateKitReferences(&app.data_store.kits);
@@ -452,8 +447,6 @@ fn deleteKit(app: *App, index: usize) !void {
 
 /// Swap two kits
 fn swapKits(app: *App, idx_a: usize, idx_b: usize) !void {
-    // const stdout = getStdOutWriter();
-
     if (idx_a < app.data_store.kits.size() and idx_b < app.data_store.kits.size()) {
         app.data_store.kits.swap(idx_a, idx_b);
         app.data_store.kit_chains.updateKitReferences(&app.data_store.kits);
@@ -465,8 +458,6 @@ fn swapKits(app: *App, idx_a: usize, idx_b: usize) !void {
 
 /// Save configuration
 fn saveConfiguration(app: *App, path: []const u8) !void {
-    // const stdout = getStdOutWriter();
-
     std.debug.print("Saving configuration to: {s}\n", .{path});
     try xml_writer.exportConfiguration(&app.data_store, path, app.allocator);
     try std.fs.File.stdout().writeAll("Configuration saved successfully.\n");
@@ -627,7 +618,7 @@ fn getStdErrWriter() StdErrWriter {
 //         };
 //     } else {
 //         try stderr.print("Unknown command: {s}\n", .{command});
-//         try stderr.writeAll("Use 'spd-sx-editor help' for usage information.\n");
+//         try stderr.writeAll("Use 'speedsx help' for usage information.\n");
 //     }
 // }
 
@@ -647,7 +638,7 @@ pub fn main() !void {
     var app = App.init(allocator);
     defer app.deinit();
 
-    try std.fs.File.stdout().writeAll("=== SPD‑SX Editor Interactive Mode ===\n");
+    try std.fs.File.stdout().writeAll("=== SpeedSX Interactive Mode ===\n");
 
     // var buf: [256]u8 = undefined;
 
@@ -674,7 +665,6 @@ pub fn main() !void {
         );
 
         const bare_line = try stdin.takeDelimiter('\n') orelse unreachable;
-        // const line = std.mem.trim(u8, bare_line, "\r");
         const choice = std.mem.trim(u8, bare_line, " \t\r\n");
 
         if (choice.len == 0) continue;
