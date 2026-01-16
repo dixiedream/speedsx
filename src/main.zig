@@ -6,6 +6,7 @@ const ui = @import("ui.zig");
 const file_io = @import("file_io.zig");
 const spdsx_io = @import("spdsx_io.zig");
 const audio = @import("audio.zig");
+const user_config = @import("config.zig");
 
 const Config = struct {
     window_width: i32 = 1100,
@@ -35,7 +36,7 @@ const App = struct {
             .running = true,
             .last_time = @intCast(c.SDL_GetTicks64()),
             .allocator = allocator,
-            .audio_player = audio.AudioPlayer.init(),
+            .audio_player = audio.AudioPlayer.init(allocator),
             .current_sample = audio.AudioSample{},
         };
     }
@@ -93,8 +94,14 @@ pub fn main() !void {
     var app = App.init(sdl_renderer, allocator);
     defer app.deinit();
 
-    // Set a default path hint for the startup screen
-    app.editor_ui.setStartupPath("/Volumes/SPD-SX_/Roland");
+    // Load last used path from config, or use default
+    const saved_config = user_config.load();
+    const last_path = saved_config.getLastPath();
+    if (last_path.len > 0) {
+        app.editor_ui.setStartupPath(last_path);
+    } else {
+        app.editor_ui.setStartupPath("/Volumes/SPD-SX_/Roland");
+    }
 
     // Main loop
     var event: c.SDL_Event = undefined;
@@ -104,8 +111,8 @@ pub fn main() !void {
         app.last_time = current_time;
 
         // Reset per-frame state
-        app.editor_ui.mouse_clicked = false;
-        app.editor_ui.mouse_right_clicked = false;
+        app.editor_ui.input.mouse_clicked = false;
+        app.editor_ui.input.mouse_right_clicked = false;
         app.editor_ui.beginFrame();
 
         // Handle events
@@ -115,18 +122,18 @@ pub fn main() !void {
                     app.running = false;
                 },
                 c.SDL_MOUSEMOTION => {
-                    app.editor_ui.mouse_x = event.motion.x;
-                    app.editor_ui.mouse_y = event.motion.y;
+                    app.editor_ui.input.mouse_x = event.motion.x;
+                    app.editor_ui.input.mouse_y = event.motion.y;
                     // Update drag state
                     app.editor_ui.updateDrag();
                 },
                 c.SDL_MOUSEBUTTONDOWN => {
                     if (event.button.button == c.SDL_BUTTON_LEFT) {
-                        app.editor_ui.mouse_down = true;
-                        app.editor_ui.mouse_clicked = true;
+                        app.editor_ui.input.mouse_down = true;
+                        app.editor_ui.input.mouse_clicked = true;
 
                         // Close context menu on left click outside it
-                        if (app.editor_ui.context_menu_open) {
+                        if (app.editor_ui.context_menu.open) {
                             // Menu click handling is done in drawPadContextMenu
                         }
 
@@ -137,17 +144,17 @@ pub fn main() !void {
                             // We'll apply on next frame if no field was clicked
                         }
                     } else if (event.button.button == c.SDL_BUTTON_RIGHT) {
-                        app.editor_ui.mouse_right_clicked = true;
+                        app.editor_ui.input.mouse_right_clicked = true;
                     }
                 },
                 c.SDL_MOUSEBUTTONUP => {
                     if (event.button.button == c.SDL_BUTTON_LEFT) {
-                        app.editor_ui.mouse_down = false;
+                        app.editor_ui.input.mouse_down = false;
 
                         // Handle drop if dragging
                         if (app.editor_ui.isDragging()) {
                             _ = ui.applyDropFromLibrary(&app.editor_ui, app.project.currentKit(), &app.project.sample_library);
-                        } else if (app.editor_ui.drag_type != .none) {
+                        } else if (app.editor_ui.drag.drag_type != .none) {
                             // Cancel drag if we never started actually dragging
                             app.editor_ui.cancelDrag();
                         }
@@ -179,93 +186,6 @@ pub fn main() !void {
     }
 }
 
-fn initDemoData(project: *models.Project) void {
-    // Add samples to the library first
-    const library = &project.sample_library;
-
-    // Demo sample library - these represent all available waves
-    const demo_samples = [_]struct { name: []const u8, path: []const u8 }{
-        .{ .name = "Kick 1", .path = "/samples/kick1.wav" },
-        .{ .name = "Kick 2", .path = "/samples/kick2.wav" },
-        .{ .name = "Kick 808", .path = "/samples/kick808.wav" },
-        .{ .name = "Snare 1", .path = "/samples/snare1.wav" },
-        .{ .name = "Snare 2", .path = "/samples/snare2.wav" },
-        .{ .name = "Snare Rim", .path = "/samples/snare_rim.wav" },
-        .{ .name = "Hi-Hat Closed", .path = "/samples/hihat_closed.wav" },
-        .{ .name = "Hi-Hat Open", .path = "/samples/hihat_open.wav" },
-        .{ .name = "Hi-Hat Pedal", .path = "/samples/hihat_pedal.wav" },
-        .{ .name = "Tom 1", .path = "/samples/tom1.wav" },
-        .{ .name = "Tom 2", .path = "/samples/tom2.wav" },
-        .{ .name = "Tom Floor", .path = "/samples/tom_floor.wav" },
-        .{ .name = "Crash", .path = "/samples/crash.wav" },
-        .{ .name = "Crash 2", .path = "/samples/crash2.wav" },
-        .{ .name = "Ride", .path = "/samples/ride.wav" },
-        .{ .name = "Ride Bell", .path = "/samples/ride_bell.wav" },
-        .{ .name = "Clap", .path = "/samples/clap.wav" },
-        .{ .name = "Cowbell", .path = "/samples/cowbell.wav" },
-        .{ .name = "Tambourine", .path = "/samples/tambourine.wav" },
-        .{ .name = "Shaker", .path = "/samples/shaker.wav" },
-        .{ .name = "Conga Hi", .path = "/samples/conga_hi.wav" },
-        .{ .name = "Conga Lo", .path = "/samples/conga_lo.wav" },
-        .{ .name = "Bongo Hi", .path = "/samples/bongo_hi.wav" },
-        .{ .name = "Bongo Lo", .path = "/samples/bongo_lo.wav" },
-        .{ .name = "FX Sweep", .path = "/samples/fx_sweep.wav" },
-    };
-
-    for (demo_samples) |sample| {
-        _ = library.addOrFind(sample.name, sample.path);
-    }
-
-    // Set up Kit 1 - Demo Kit
-    const kit = project.currentKit();
-    kit.setName("Demo Kit 1");
-    kit.tempo = 120;
-
-    // Load samples from library to pads (using library paths)
-    kit.pads[0].loadSample("Kick 1", "/samples/kick1.wav");
-    kit.pads[0].volume = 100;
-    kit.pads[0].play_mode = .single;
-
-    kit.pads[1].loadSample("Snare 1", "/samples/snare1.wav");
-    kit.pads[1].volume = 95;
-    kit.pads[1].play_mode = .single;
-
-    kit.pads[2].loadSample("Hi-Hat Closed", "/samples/hihat_closed.wav");
-    kit.pads[2].volume = 80;
-    kit.pads[2].mute_group = .group1;
-
-    kit.pads[3].loadSample("Hi-Hat Open", "/samples/hihat_open.wav");
-    kit.pads[3].volume = 85;
-    kit.pads[3].mute_group = .group1;
-
-    kit.pads[4].loadSample("Tom 1", "/samples/tom1.wav");
-    kit.pads[4].volume = 90;
-
-    kit.pads[5].loadSample("Tom 2", "/samples/tom2.wav");
-    kit.pads[5].volume = 90;
-
-    kit.pads[6].loadSample("Crash", "/samples/crash.wav");
-    kit.pads[6].volume = 85;
-    kit.pads[6].play_mode = .single;
-
-    kit.pads[7].loadSample("Ride", "/samples/ride.wav");
-    kit.pads[7].volume = 80;
-
-    // Set up Kit 2 - Electronic Kit (uses some different samples)
-    _ = project.addKit();
-    project.kits[1].setName("Electronic Kit");
-    project.kits[1].tempo = 140;
-    project.kits[1].pads[0].loadSample("Kick 808", "/samples/kick808.wav");
-    project.kits[1].pads[0].volume = 100;
-    project.kits[1].pads[1].loadSample("Clap", "/samples/clap.wav");
-    project.kits[1].pads[1].volume = 95;
-
-    // Set up Kit 3 - Acoustic Kit
-    _ = project.addKit();
-    project.kits[2].setName("Acoustic Kit");
-    project.kits[2].tempo = 100;
-}
-
 fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
     const mod = keysym.mod;
     const ctrl = (mod & c.KMOD_CTRL) != 0;
@@ -284,9 +204,11 @@ fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
             },
             c.SDLK_RETURN, c.SDLK_KP_ENTER => {
                 // Apply the text input to the appropriate field
-                if (app.editor_ui.focused_field == .sample_browser_path) {
+                if (app.editor_ui.text_input.focused_field == .sample_browser_path) {
                     ui.applySampleBrowserPathInput(&app.editor_ui);
                     scanSampleDirectory(app);
+                } else if (app.editor_ui.text_input.focused_field == .kit_chain_name) {
+                    ui.applyKitChainNameInput(&app.editor_ui, &app.project);
                 } else {
                     ui.applyTextInputToKit(&app.editor_ui, app.project.currentKit());
                 }
@@ -318,17 +240,17 @@ fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
     if (app.editor_ui.show_sample_browser) {
         switch (keysym.sym) {
             c.SDLK_ESCAPE => {
-                app.editor_ui.show_sample_browser = false;
+                app.editor_ui.closeSampleBrowser();
                 app.audio_player.stop();
             },
             c.SDLK_UP => {
-                if (app.editor_ui.sample_browser_selected > 0) {
-                    app.editor_ui.sample_browser_selected -= 1;
+                if (app.editor_ui.sample_browser.selected > 0) {
+                    app.editor_ui.sample_browser.selected -= 1;
                 }
             },
             c.SDLK_DOWN => {
-                if (app.editor_ui.sample_browser_selected < app.editor_ui.sample_browser_file_count -| 1) {
-                    app.editor_ui.sample_browser_selected += 1;
+                if (app.editor_ui.sample_browser.selected < app.editor_ui.sample_browser.file_count -| 1) {
+                    app.editor_ui.sample_browser.selected += 1;
                 }
             },
             c.SDLK_RETURN, c.SDLK_KP_ENTER => {
@@ -350,14 +272,16 @@ fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
 
     switch (keysym.sym) {
         c.SDLK_ESCAPE => {
-            if (app.editor_ui.context_menu_open) {
+            if (app.editor_ui.context_menu.open) {
                 app.editor_ui.closeContextMenu();
             } else if (app.editor_ui.show_sample_browser) {
-                app.editor_ui.show_sample_browser = false;
+                app.editor_ui.closeSampleBrowser();
             } else if (app.editor_ui.show_midi_config) {
                 app.editor_ui.show_midi_config = false;
             } else if (app.editor_ui.show_settings) {
                 app.editor_ui.show_settings = false;
+            } else if (app.editor_ui.show_kit_chain) {
+                app.editor_ui.show_kit_chain = false;
             }
         },
         c.SDLK_s => {
@@ -387,14 +311,15 @@ fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
             }
         },
         c.SDLK_TAB => {
+            // Cycle through all 15 pads (9 main + 4 triggers + 2 footswitches)
             if ((mod & c.KMOD_SHIFT) != 0) {
                 if (app.editor_ui.selected_pad == 0) {
-                    app.editor_ui.selected_pad = 8;
+                    app.editor_ui.selected_pad = models.Kit.NUM_PADS - 1;
                 } else {
                     app.editor_ui.selected_pad -= 1;
                 }
             } else {
-                app.editor_ui.selected_pad = (app.editor_ui.selected_pad + 1) % 9;
+                app.editor_ui.selected_pad = (app.editor_ui.selected_pad + 1) % models.Kit.NUM_PADS;
             }
         },
         c.SDLK_PAGEUP => {
@@ -414,18 +339,25 @@ fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
             app.editor_ui.show_midi_config = !app.editor_ui.show_midi_config;
         },
         c.SDLK_F3 => {
-            app.editor_ui.show_sample_browser = !app.editor_ui.show_sample_browser;
+            if (app.editor_ui.show_sample_browser) {
+                app.editor_ui.closeSampleBrowser();
+            } else {
+                app.editor_ui.openSampleBrowser();
+            }
         },
-        // Number keys for pad triggers
-        c.SDLK_1, c.SDLK_KP_1 => app.editor_ui.triggerPadFlash(0),
-        c.SDLK_2, c.SDLK_KP_2 => app.editor_ui.triggerPadFlash(1),
-        c.SDLK_3, c.SDLK_KP_3 => app.editor_ui.triggerPadFlash(2),
-        c.SDLK_4, c.SDLK_KP_4 => app.editor_ui.triggerPadFlash(3),
-        c.SDLK_5, c.SDLK_KP_5 => app.editor_ui.triggerPadFlash(4),
-        c.SDLK_6, c.SDLK_KP_6 => app.editor_ui.triggerPadFlash(5),
-        c.SDLK_7, c.SDLK_KP_7 => app.editor_ui.triggerPadFlash(6),
-        c.SDLK_8, c.SDLK_KP_8 => app.editor_ui.triggerPadFlash(7),
-        c.SDLK_9, c.SDLK_KP_9 => app.editor_ui.triggerPadFlash(8),
+        c.SDLK_F4 => {
+            app.editor_ui.show_kit_chain = !app.editor_ui.show_kit_chain;
+        },
+        // Number keys for pad triggers (play sample + visual flash)
+        c.SDLK_1, c.SDLK_KP_1 => playPadSample(app, 0),
+        c.SDLK_2, c.SDLK_KP_2 => playPadSample(app, 1),
+        c.SDLK_3, c.SDLK_KP_3 => playPadSample(app, 2),
+        c.SDLK_4, c.SDLK_KP_4 => playPadSample(app, 3),
+        c.SDLK_5, c.SDLK_KP_5 => playPadSample(app, 4),
+        c.SDLK_6, c.SDLK_KP_6 => playPadSample(app, 5),
+        c.SDLK_7, c.SDLK_KP_7 => playPadSample(app, 6),
+        c.SDLK_8, c.SDLK_KP_8 => playPadSample(app, 7),
+        c.SDLK_9, c.SDLK_KP_9 => playPadSample(app, 8),
         else => {},
     }
 }
@@ -504,9 +436,7 @@ fn tryOpenProject(app: *App) void {
         if (spdsx_io.loadConfiguration(app.allocator, path)) |result| {
             app.project = result.project;
             app.editor_ui.enterEditor();
-
-            // Log loaded counts for debugging
-            std.debug.print("Loaded {d} kits and {d} waves from SPD-SX\n", .{ result.kit_count, result.wave_count });
+            user_config.saveLastPath(path); // Remember this path for next startup
         } else |err| {
             switch (err) {
                 spdsx_io.SpdSxError.FileNotFound => {
@@ -539,6 +469,7 @@ fn tryOpenProject(app: *App) void {
             app.project = loaded_project;
             app.project.setFilePath(path);
             app.editor_ui.enterEditor();
+            user_config.saveLastPath(path); // Remember this path for next startup
         } else |err| {
             // If file doesn't exist, check if the directory exists
             switch (err) {
@@ -550,8 +481,8 @@ fn tryOpenProject(app: *App) void {
                         // Directory exists, start with new project at this path
                         app.project = models.Project.init();
                         app.project.setFilePath(path);
-                        initDemoData(&app.project);
                         app.editor_ui.enterEditor();
+                        user_config.saveLastPath(path); // Remember this path for next startup
                     } else |_| {
                         app.editor_ui.setStartupError("Directory not found");
                     }
@@ -575,7 +506,6 @@ fn tryOpenProject(app: *App) void {
 
 fn startNewProject(app: *App) void {
     app.project = models.Project.init();
-    initDemoData(&app.project);
     app.editor_ui.enterEditor();
 }
 
@@ -584,24 +514,31 @@ fn saveProject(app: *App) void {
 
     // If we have a valid path that looks like SPD-SX, save in SPD-SX format
     if (path.len > 0 and spdsx_io.isValidSpdSxPath(path)) {
-        spdsx_io.saveConfiguration(app.allocator, &app.project, path) catch |err| {
-            std.debug.print("Error saving SPD-SX configuration: {}\n", .{err});
+        spdsx_io.saveConfiguration(app.allocator, &app.project, path) catch {
+            app.editor_ui.showError("Failed to save SPD-SX configuration");
             return;
         };
-        std.debug.print("Saved configuration to SPD-SX at: {s}\n", .{path});
+        app.editor_ui.showSuccess("Project saved");
     } else if (path.len > 0) {
         // Save to SPD-SX format at the specified path (creating structure if needed)
         spdsx_io.createSpdSxStructure(path) catch {};
-        spdsx_io.saveConfiguration(app.allocator, &app.project, path) catch |err| {
-            std.debug.print("Error saving configuration: {}\n", .{err});
+        spdsx_io.saveConfiguration(app.allocator, &app.project, path) catch {
             // Fall back to legacy format
-            file_io.saveProject(&app.project, "project.spdx") catch return;
+            file_io.saveProject(&app.project, "project.spdx") catch {
+                app.editor_ui.showError("Failed to save project");
+                return;
+            };
+            app.editor_ui.showSuccess("Project saved (legacy format)");
             return;
         };
-        std.debug.print("Saved configuration to: {s}\n", .{path});
+        app.editor_ui.showSuccess("Project saved");
     } else {
         // No path set, use legacy format
-        file_io.saveProject(&app.project, "project.spdx") catch return;
+        file_io.saveProject(&app.project, "project.spdx") catch {
+            app.editor_ui.showError("Failed to save project");
+            return;
+        };
+        app.editor_ui.showSuccess("Project saved to project.spdx");
     }
 }
 
@@ -612,13 +549,18 @@ fn loadProject(app: *App) void {
     if (path.len > 0 and spdsx_io.isValidSpdSxPath(path)) {
         if (spdsx_io.loadConfiguration(app.allocator, path)) |result| {
             app.project = result.project;
-            std.debug.print("Reloaded {d} kits and {d} waves from SPD-SX\n", .{ result.kit_count, result.wave_count });
-        } else |err| {
-            std.debug.print("Error reloading SPD-SX configuration: {}\n", .{err});
+            app.editor_ui.showSuccess("Project reloaded");
+        } else |_| {
+            app.editor_ui.showError("Failed to reload SPD-SX configuration");
         }
     } else {
         // Fall back to legacy format
-        app.project = file_io.loadProject("project.spdx") catch return;
+        if (file_io.loadProject("project.spdx")) |loaded| {
+            app.project = loaded;
+            app.editor_ui.showSuccess("Project loaded");
+        } else |_| {
+            app.editor_ui.showError("Failed to load project");
+        }
     }
 }
 
@@ -632,7 +574,7 @@ fn scanSampleDirectory(app: *App) void {
 
     app.editor_ui.clearSampleBrowserError();
     app.editor_ui.clearSampleBrowserFiles();
-    app.editor_ui.sample_browser_scanning = true;
+    app.editor_ui.sample_browser.scanning = true;
 
     // Try to open and scan the directory
     var path_buf: [512]u8 = undefined;
@@ -643,7 +585,7 @@ fn scanSampleDirectory(app: *App) void {
             error.NotDir => app.editor_ui.setSampleBrowserError("Path is not a directory"),
             else => app.editor_ui.setSampleBrowserError("Error opening directory"),
         }
-        app.editor_ui.sample_browser_scanning = false;
+        app.editor_ui.sample_browser.scanning = false;
         return;
     };
     defer dir.close();
@@ -656,13 +598,13 @@ fn scanSampleDirectory(app: *App) void {
         if (audio.isSupportedAudioFile(entry.name)) {
             // Build full path
             const full_path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ path, entry.name }) catch continue;
-            _ = app.editor_ui.addSampleBrowserFile(entry.name, full_path);
+            _ = app.editor_ui.sample_browser.addFile(entry.name, full_path);
         }
     }
 
-    app.editor_ui.sample_browser_scanning = false;
+    app.editor_ui.sample_browser.scanning = false;
 
-    if (app.editor_ui.sample_browser_file_count == 0) {
+    if (app.editor_ui.sample_browser.file_count == 0) {
         app.editor_ui.setSampleBrowserError("No audio files found (WAV, AIFF)");
     }
 }
@@ -687,7 +629,8 @@ fn playSelectedSample(app: *App) void {
     };
 }
 
-/// Load the selected sample into the project's sample library and assign to current pad
+/// Load the selected sample into the project's sample library (wave list)
+/// Pad assignment is done separately via drag & drop from the wave list
 fn loadSelectedSample(app: *App) void {
     const file = app.editor_ui.getSelectedSampleFile() orelse return;
     const file_name = file.getName();
@@ -695,15 +638,43 @@ fn loadSelectedSample(app: *App) void {
 
     if (file_path.len == 0) return;
 
-    // Add to sample library
-    _ = app.project.sample_library.addOrFind(file_name, file_path);
+    // Add to sample library only - pad assignment is a separate action
+    const wave_idx = app.project.sample_library.addOrFind(file_name, file_path);
 
-    // Also load it onto the currently selected pad
-    const pad = app.project.currentKit().getPad(app.editor_ui.selected_pad);
-    pad.loadSample(file_name, file_path);
+    // Select the newly added wave in the wave list
+    if (wave_idx) |idx| {
+        app.editor_ui.selected_wave = idx;
+    }
 
     // Close the browser
-    app.editor_ui.show_sample_browser = false;
+    app.editor_ui.closeSampleBrowser();
+}
+
+/// Play the sample from a specific pad
+fn playPadSample(app: *App, pad_index: u8) void {
+    const pad = app.project.currentKit().getPad(pad_index);
+
+    if (!pad.has_sample) return;
+
+    const sample_path = pad.sample.getPath();
+    if (sample_path.len == 0) return;
+
+    // Stop any current playback
+    app.audio_player.stop();
+
+    // Load and play the sample
+    app.audio_player.playFile(sample_path, &app.current_sample) catch {
+        app.editor_ui.showError("Failed to play sample");
+        return;
+    };
+
+    // Trigger visual flash
+    app.editor_ui.triggerPadFlash(pad_index);
+}
+
+/// Play the sample from the currently selected pad
+fn playCurrentPadSample(app: *App) void {
+    playPadSample(app, app.editor_ui.selected_pad);
 }
 
 fn update(app: *App, delta: f32) void {
@@ -713,8 +684,10 @@ fn update(app: *App, delta: f32) void {
     if (app.editor_ui.shouldUnfocusTextField()) {
         if (app.editor_ui.isInStartup()) {
             ui.applyStartupPathInput(&app.editor_ui);
-        } else if (app.editor_ui.focused_field == .sample_browser_path) {
+        } else if (app.editor_ui.text_input.focused_field == .sample_browser_path) {
             ui.applySampleBrowserPathInput(&app.editor_ui);
+        } else if (app.editor_ui.text_input.focused_field == .kit_chain_name) {
+            ui.applyKitChainNameInput(&app.editor_ui, &app.project);
         } else {
             ui.applyTextInputToKit(&app.editor_ui, app.project.currentKit());
         }
@@ -746,27 +719,25 @@ fn draw(app: *App, width: c_int, height: c_int) void {
     // Draw toolbar
     ui.drawToolbar(r, &app.editor_ui, 0, width);
 
-    // Main content area
-    const content_y: i32 = 50;
+    // Main content area - using Layout constants
+    const L = ui.Layout;
+    const content_y = L.content_y;
 
-    // Left panel: Kit Settings (Kit, Main, Mode, Sub sections)
-    const left_panel_x: i32 = 15;
-    const left_panel_w: i32 = 200;
-    ui.drawKitSettingsPanel(r, &app.editor_ui, left_panel_x, content_y + 8, app.project.currentKit(), app.project.currentKit().getPad(app.editor_ui.selected_pad));
+    // Left panel: Kit Settings (Kit, Main, Mode, Sub, MIDI sections) - scrollable
+    const left_panel_height = height - content_y - L.status_bar_height - L.file_bar_height - 20;
+    ui.drawKitSettingsPanel(r, &app.editor_ui, L.left_panel_x, content_y + 8, left_panel_height, app.project.currentKit(), app.project.currentKit().getPad(app.editor_ui.selected_pad));
 
     // Center: Pad grid
-    const grid_x = left_panel_w + 30;
-    const grid_y = content_y + 45;
+    const grid_x = L.left_panel_width + L.grid_offset_x;
+    const grid_y = content_y + L.grid_offset_y;
     ui.drawPadGrid(r, &app.editor_ui, grid_x, grid_y, app.project.currentKit());
 
-    // Device visualization below pad grid
-    const device_y = grid_y + 300;
-    if (app.editor_ui.show_device_view) {
-        ui.drawDeviceView(r, &app.editor_ui, grid_x, device_y);
-    }
+    // Auxiliary pads section (triggers & footswitches) below main pad grid
+    const aux_section_y = grid_y + L.pad_grid_height;
+    ui.drawAuxPadSection(r, &app.editor_ui, grid_x, aux_section_y, app.project.currentKit());
 
     // Right side panels
-    const right_panel_x = grid_x + 320;
+    const right_panel_x = grid_x + L.pad_grid_width + L.right_panel_gap;
 
     // Wave list panel
     if (app.editor_ui.show_wave_list) {
@@ -774,18 +745,22 @@ fn draw(app: *App, width: c_int, height: c_int) void {
     }
 
     // Kit list panel
-    const kit_list_x = right_panel_x + 150;
+    const kit_list_x = right_panel_x + L.kit_list_width;
     if (app.editor_ui.show_kit_list) {
         ui.drawKitListPanel(r, &app.editor_ui, kit_list_x, content_y + 8, &app.project);
     }
 
     // Action buttons (right side, below kit list)
-    const action_btn_x = right_panel_x;
-    const action_btn_y = content_y + 380;
-    ui.drawActionButtons(r, &app.editor_ui, action_btn_x, action_btn_y, &app.project);
+    const action_result = ui.drawActionButtons(r, &app.editor_ui, right_panel_x, content_y + L.action_buttons_y, &app.project);
+    if (action_result.play_sample) {
+        playCurrentPadSample(app);
+    }
+    if (action_result.stop_sample) {
+        app.audio_player.stop();
+    }
 
     // File bar at bottom (with Open/Save)
-    const file_bar_y = height - 50;
+    const file_bar_y = height - L.file_bar_height;
     const file_action = ui.drawFileBar(r, &app.editor_ui, 0, file_bar_y, width, &app.project);
     if (file_action.needs_open) {
         loadProject(app);
@@ -795,7 +770,7 @@ fn draw(app: *App, width: c_int, height: c_int) void {
     }
 
     // Status bar
-    ui.drawStatusBar(r, height - 22, width, &app.project, &app.editor_ui);
+    ui.drawStatusBar(r, height - L.status_bar_height, width, &app.project, &app.editor_ui);
 
     // Modals
     const center_x = @divFloor(width, 2);
@@ -814,7 +789,7 @@ fn draw(app: *App, width: c_int, height: c_int) void {
             loadSelectedSample(app);
         }
         if (sample_action.close) {
-            app.editor_ui.show_sample_browser = false;
+            app.editor_ui.closeSampleBrowser();
             app.audio_player.stop();
         }
     }
@@ -827,8 +802,68 @@ fn draw(app: *App, width: c_int, height: c_int) void {
         ui.drawSettings(r, &app.editor_ui, center_x, center_y, &app.project);
     }
 
-    // Draw context menu (on top of most elements)
+    if (app.editor_ui.show_kit_chain) {
+        const chain_action = ui.drawKitChainEditor(r, &app.editor_ui, center_x, center_y, &app.project);
+        if (chain_action.close) {
+            app.editor_ui.show_kit_chain = false;
+        }
+    }
+
+    // Wave editor modal
+    if (app.editor_ui.show_wave_editor) {
+        const wave_idx = app.editor_ui.wave_editor.wave_index;
+        if (wave_idx < app.project.sample_library.count) {
+            const sample = &app.project.sample_library.samples[wave_idx];
+            const wave_action = ui.drawWaveEditor(r, &app.editor_ui, center_x, center_y, sample);
+
+            if (wave_action.play_preview) {
+                // Play the sample with current start/end (for now just play the whole sample)
+                const sample_path = sample.getPath();
+                if (sample_path.len > 0) {
+                    app.audio_player.playFile(sample_path, &app.current_sample) catch {};
+                }
+            }
+            if (wave_action.save) {
+                // Apply wave editor changes to the sample
+                app.editor_ui.applyWaveEditorChanges(sample);
+            }
+            if (wave_action.close) {
+                app.editor_ui.closeWaveEditor();
+            }
+        } else {
+            app.editor_ui.closeWaveEditor();
+        }
+    }
+
+    // Draw context menus (on top of most elements)
     _ = ui.drawPadContextMenu(r, &app.editor_ui, app.project.currentKit());
+
+    // Wave context menu - returns true if "Edit Wave" was clicked
+    if (ui.drawWaveContextMenu(r, &app.editor_ui, &app.project)) {
+        const wave_idx = app.editor_ui.context_menu.wave;
+        if (wave_idx < app.project.sample_library.count) {
+            const sample = &app.project.sample_library.samples[wave_idx];
+            app.editor_ui.openWaveEditor(wave_idx, sample);
+
+            // Load waveform data
+            const sample_path = sample.getPath();
+            if (sample_path.len > 0) {
+                app.audio_player.loadWaveformData(
+                    sample_path,
+                    &app.editor_ui.wave_editor.waveform_data,
+                    &app.editor_ui.wave_editor.total_samples,
+                    &app.editor_ui.wave_editor.sample_rate,
+                    &app.editor_ui.wave_editor.channels,
+                ) catch {};
+                app.editor_ui.wave_editor.waveform_loaded = true;
+
+                // Set end point to total samples if not set
+                if (app.editor_ui.wave_editor.end_point == 0) {
+                    app.editor_ui.wave_editor.end_point = app.editor_ui.wave_editor.total_samples;
+                }
+            }
+        }
+    }
 
     // Draw drag indicator last (on top of everything)
     ui.drawDragIndicator(r, &app.editor_ui);

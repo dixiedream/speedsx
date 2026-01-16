@@ -29,6 +29,7 @@ pub const LoadResult = struct {
     project: models.Project,
     kit_count: usize,
     wave_count: usize,
+    chain_count: usize,
     error_message: ?[]const u8,
 };
 
@@ -38,6 +39,29 @@ fn pathExists(path: []const u8) bool {
     return true;
 }
 
+/// Extract relative wave path from a full path
+/// e.g., "/path/to/Roland/SPD-SX/WAVE/DATA/01/file.wav" -> "01/file.wav"
+fn extractRelativeWavePath(full_path: []const u8, base_path: []const u8) []const u8 {
+    // Look for "SPD-SX/WAVE/DATA/" marker in the path
+    const marker = "SPD-SX/WAVE/DATA/";
+    if (std.mem.indexOf(u8, full_path, marker)) |pos| {
+        const relative_start = pos + marker.len;
+        if (relative_start < full_path.len) {
+            return full_path[relative_start..];
+        }
+    }
+
+    // Also try with base_path prefix directly
+    var prefix_buf: [512]u8 = undefined;
+    const prefix = std.fmt.bufPrint(&prefix_buf, "{s}/SPD-SX/WAVE/DATA/", .{base_path}) catch return full_path;
+    if (std.mem.startsWith(u8, full_path, prefix)) {
+        return full_path[prefix.len..];
+    }
+
+    // Return as-is if no prefix found (might already be relative)
+    return full_path;
+}
+
 /// Load SPD-SX configuration from a path (e.g., /Volumes/SPD-SX_/Roland)
 /// Returns a Project populated with the loaded data
 pub fn loadConfiguration(allocator: Allocator, base_path: []const u8) SpdSxError!LoadResult {
@@ -45,6 +69,7 @@ pub fn loadConfiguration(allocator: Allocator, base_path: []const u8) SpdSxError
         .project = models.Project.init(),
         .kit_count = 0,
         .wave_count = 0,
+        .chain_count = 0,
         .error_message = null,
     };
 
@@ -77,6 +102,9 @@ pub fn loadConfiguration(allocator: Allocator, base_path: []const u8) SpdSxError
     // Load kits
     result.kit_count = loadKits(allocator, actual_path, &result.project) catch 0;
 
+    // Load kit chains
+    result.chain_count = loadKitChains(allocator, actual_path, &result.project.kit_chain_library) catch 0;
+
     // Set file path
     result.project.setFilePath(base_path);
 
@@ -87,8 +115,10 @@ pub fn loadConfiguration(allocator: Allocator, base_path: []const u8) SpdSxError
 fn loadWaves(allocator: Allocator, base_path: []const u8, library: *models.SampleLibrary) !usize {
     var wave_count: usize = 0;
     var path_buf: [512]u8 = undefined;
+    var full_path_buf: [512]u8 = undefined;
 
     // Waves are stored in SPD-SX/WAVE/PRM/XX/YY.spd format
+    // Actual WAV files are in SPD-SX/WAVE/DATA/XX/filename.wav
     for (0..99) |folder| {
         for (0..100) |file| {
             const wave_path = std.fmt.bufPrint(&path_buf, "{s}/SPD-SX/WAVE/PRM/{d:0>2}/{d:0>2}.spd", .{ base_path, folder, file }) catch continue;
@@ -102,10 +132,40 @@ fn loadWaves(allocator: Allocator, base_path: []const u8, library: *models.Sampl
             const wave_name = cli_wave.getName(allocator) catch continue;
             defer allocator.free(wave_name);
 
-            const wave_file_path = cli_wave.getPath();
+            // Get the path from the wave metadata
+            const stored_path = cli_wave.getPath();
 
-            _ = library.addSample(wave_name, wave_file_path);
-            wave_count += 1;
+            // Build the full absolute path to the actual WAV file
+            // WAV files are stored in SPD-SX/WAVE/DATA/{relative_path}
+            // But if the path is already absolute (starts with /), use it as-is
+            var full_wave_path: []const u8 = undefined;
+            if (stored_path.len > 0 and stored_path[0] == '/') {
+                // Already an absolute path - extract relative part to rebuild correctly
+                const rel_path = extractRelativeWavePath(stored_path, base_path);
+                full_wave_path = std.fmt.bufPrint(&full_path_buf, "{s}/SPD-SX/WAVE/DATA/{s}", .{ base_path, rel_path }) catch continue;
+            } else {
+                // Relative path - prepend the base
+                full_wave_path = std.fmt.bufPrint(&full_path_buf, "{s}/SPD-SX/WAVE/DATA/{s}", .{ base_path, stored_path }) catch continue;
+            }
+
+            // Add sample with metadata
+            if (library.count < models.SampleLibrary.MAX_SAMPLES) {
+                const idx = library.count;
+                library.samples[idx] = models.Sample.init();
+                library.samples[idx].setName(wave_name);
+                library.samples[idx].setPath(full_wave_path);
+
+                // Copy wave metadata
+                library.samples[idx].tag = cli_wave.tag;
+                library.samples[idx].tempo = cli_wave.tempo;
+                library.samples[idx].beat = cli_wave.beat;
+                library.samples[idx].measure = cli_wave.measure;
+                library.samples[idx].start_point = cli_wave.start;
+                library.samples[idx].end_point = cli_wave.end;
+
+                library.count += 1;
+                wave_count += 1;
+            }
         }
     }
 
@@ -143,6 +203,92 @@ fn loadKits(allocator: Allocator, base_path: []const u8, project: *models.Projec
     return kit_count;
 }
 
+/// Load kit chains from SPD-SX SYSTEM directory (sysparam.spd)
+fn loadKitChains(allocator: Allocator, base_path: []const u8, library: *models.KitChainLibrary) !usize {
+    var path_buf: [512]u8 = undefined;
+
+    const chain_path = std.fmt.bufPrint(&path_buf, "{s}/SPD-SX/SYSTEM/sysparam.spd", .{base_path}) catch {
+        return 0;
+    };
+
+    if (!pathExists(chain_path)) {
+        return 0;
+    }
+
+    var cli_chains = cli_xml.parseKitChainFile(allocator, chain_path) catch {
+        return 0;
+    };
+    defer cli_chains.deinit(allocator);
+
+    // Reset library
+    library.* = models.KitChainLibrary.init();
+
+    var count: usize = 0;
+    for (cli_chains.items) |*cli_chain| {
+        if (library.count >= models.KitChainLibrary.MAX_CHAINS) break;
+
+        // Convert CLI chain to UI chain
+        const ui_chain = &library.chains[library.count];
+        convertCliChainToUiChain(allocator, cli_chain, ui_chain);
+
+        // Only count chains that have a name or steps
+        if (ui_chain.step_count > 0 or ui_chain.name.len > 0) {
+            library.count += 1;
+            count += 1;
+        }
+    }
+
+    return count;
+}
+
+/// Convert a CLI KitChain to a UI KitChain
+fn convertCliChainToUiChain(allocator: Allocator, cli_chain: *const cli_types.KitChain, ui_chain: *models.KitChain) void {
+    ui_chain.* = models.KitChain.init();
+
+    // Convert name
+    const name = cli_chain.getName(allocator) catch "";
+    defer if (name.len > 0) allocator.free(name);
+    ui_chain.setName(name);
+
+    // Convert steps (CLI uses i32, UI uses i16; -1 means empty)
+    ui_chain.step_count = 0;
+    for (cli_chain.steps, 0..) |step, i| {
+        if (i >= models.KitChain.MAX_STEPS) break;
+        if (step >= 0) {
+            ui_chain.steps[i] = @intCast(step);
+            ui_chain.step_count = @intCast(i + 1);
+        } else {
+            ui_chain.steps[i] = -1;
+        }
+    }
+
+    // Recalculate step_count to be the actual number of valid steps
+    // (counting from the end to find the last valid step)
+    var actual_count: u8 = 0;
+    for (ui_chain.steps[0..models.KitChain.MAX_STEPS], 0..) |step, i| {
+        if (step >= 0) {
+            actual_count = @intCast(i + 1);
+        }
+    }
+    ui_chain.step_count = actual_count;
+}
+
+/// Convert a UI KitChain to a CLI KitChain
+fn convertUiChainToCliChain(ui_chain: *const models.KitChain) cli_types.KitChain {
+    var cli_chain = cli_types.KitChain.init();
+
+    // Convert name using encoding
+    cli_encoding.encodeString(ui_chain.getName(), &cli_chain.nm);
+
+    // Convert steps (UI uses i16, CLI uses i32)
+    for (ui_chain.steps, 0..) |step, i| {
+        if (i >= cli_types.KITCHAIN_MAX_STEPS) break;
+        cli_chain.steps[i] = step;
+    }
+
+    return cli_chain;
+}
+
 /// Convert a CLI Kit to a UI Kit
 fn convertCliKitToUiKit(allocator: Allocator, cli_kit: *const cli_types.Kit, ui_kit: *models.Kit, library: *models.SampleLibrary) void {
     // Initialize UI kit
@@ -172,7 +318,22 @@ fn convertCliKitToUiKit(allocator: Allocator, cli_kit: *const cli_types.Kit, ui_
         ui_kit.pad_link_target = @enumFromInt(@as(u8, @intCast(cli_kit.link_pad1 + 1)));
     }
 
-    // Convert pads (CLI has 15 pads, UI has 9)
+    // Convert FX1 settings
+    ui_kit.fx1_switch = cli_kit.fx1_sw != 0;
+    ui_kit.fx1_type = @enumFromInt(@min(cli_kit.fx1_type, 19));
+    for (cli_kit.fx1_prm, 0..) |prm, idx| {
+        ui_kit.fx1_params.params[idx] = prm;
+    }
+
+    // Convert FX2 settings
+    ui_kit.fx2_switch = cli_kit.fx2_sw != 0;
+    ui_kit.fx2_type = @enumFromInt(@min(cli_kit.fx2_type, 6));
+    for (cli_kit.fx2_prm, 0..) |prm, idx| {
+        ui_kit.fx2_params.params[idx] = prm;
+    }
+    ui_kit.fx2_assign = @enumFromInt(@min(cli_kit.fx2_asgn, 15));
+
+    // Convert pads (both CLI and UI have 15 pads: 9 main + 4 triggers + 2 footswitches)
     const pad_count = @min(cli_types.MAX_PADS, models.Kit.NUM_PADS);
     for (0..pad_count) |i| {
         convertCliPadToUiPad(allocator, &cli_kit.pads[i], &ui_kit.pads[i], library);
@@ -197,10 +358,8 @@ fn convertCliPadToUiPad(_: Allocator, cli_pad: *const cli_types.Pad, ui_pad: *mo
     // Mute group
     ui_pad.mute_group = @enumFromInt(@min(cli_pad.mute_grp, 9));
 
-    // MIDI note
-    if (cli_pad.note_num >= 0 and cli_pad.note_num < 128) {
-        ui_pad.midi_note = @intCast(cli_pad.note_num);
-    }
+    // MIDI note (-1 = OFF, 0-127 = note number)
+    ui_pad.midi_note = cli_pad.note_num;
 
     // Loop mode
     ui_pad.loop_mode = @enumFromInt(@min(cli_pad.loop, 4));
@@ -219,6 +378,27 @@ fn convertCliPadToUiPad(_: Allocator, cli_pad: *const cli_types.Pad, ui_pad: *mo
 
     // Output assignment
     ui_pad.output_assign = @enumFromInt(@min(cli_pad.out_asgn, 4));
+
+    // Reverse playback
+    ui_pad.reverse = cli_pad.reverse != 0;
+
+    // MIDI channel (CLI uses -1 for GLOBAL, 0-15 for channels 1-16)
+    if (cli_pad.pad_midi_ch == -1) {
+        ui_pad.midi_channel = .global;
+    } else if (cli_pad.pad_midi_ch >= 0 and cli_pad.pad_midi_ch < 16) {
+        ui_pad.midi_channel = @enumFromInt(@as(u8, @intCast(cli_pad.pad_midi_ch + 1)));
+    }
+
+    // MIDI External Control (OFF or ON)
+    ui_pad.midi_ext_ctrl = cli_pad.midi_ctrl != 0;
+
+    // Gate time (CLI: -1 = OFF, 0 = ALT, 1-80 = 0.1s-8.0s)
+    // (UI: 0 = OFF, 1 = ALT, 2-81 = 0.1s-8.0s)
+    if (cli_pad.gate_time == -1) {
+        ui_pad.midi_gate_time = 0; // OFF
+    } else if (cli_pad.gate_time >= 0) {
+        ui_pad.midi_gate_time = @intCast(@as(i16, cli_pad.gate_time) + 1);
+    }
 
     // Load main wave/sample if assigned
     if (cli_pad.wv >= 0) {
@@ -249,6 +429,8 @@ pub fn saveConfiguration(allocator: Allocator, project: *const models.Project, b
     defer data_store.deinit();
 
     // Convert UI kits to CLI kits
+    // Wave references are resolved by path lookup, so waves are automatically
+    // referenced by their new consecutive indices
     var i: u8 = 0;
     while (i < project.kit_count) : (i += 1) {
         var cli_kit = convertUiKitToCliKit(allocator, &project.kits[i], &project.sample_library);
@@ -256,21 +438,109 @@ pub fn saveConfiguration(allocator: Allocator, project: *const models.Project, b
         data_store.kits.insert(cli_kit) catch continue;
     }
 
-    // Convert UI samples to CLI waves
+    // Convert UI samples to CLI waves with consecutive IDs
+    // This automatically renumbers waves: if samples were deleted from the middle,
+    // the remaining samples get consecutive IDs (0, 1, 2, ...) based on their
+    // position in the sample library array
     var w: u16 = 0;
     while (w < project.sample_library.count) : (w += 1) {
         const sample = &project.sample_library.samples[w];
         var cli_wave = cli_types.Wave.init();
-        cli_wave.wave_id = w;
+        cli_wave.wave_id = w; // Consecutive numbering
         cli_wave.setName(sample.getName());
-        cli_wave.setPath(sample.getPath());
+
+        // Extract relative path (remove base_path/SPD-SX/WAVE/DATA/ prefix if present)
+        const full_path = sample.getPath();
+        const relative_path = extractRelativeWavePath(full_path, base_path);
+        cli_wave.setPath(relative_path);
+
+        // Copy wave metadata
+        cli_wave.tag = sample.tag;
+        cli_wave.tempo = sample.tempo;
+        cli_wave.beat = sample.beat;
+        cli_wave.measure = sample.measure;
+        cli_wave.start = sample.start_point;
+        cli_wave.end = sample.end_point;
+
         data_store.waves.insert(cli_wave) catch continue;
+    }
+
+    // Convert UI kit chains to CLI kit chains
+    var c: u8 = 0;
+    while (c < project.kit_chain_library.count) : (c += 1) {
+        const ui_chain = &project.kit_chain_library.chains[c];
+        const cli_chain = convertUiChainToCliChain(ui_chain);
+        data_store.kit_chains.insert(cli_chain) catch continue;
     }
 
     // Export using CLI xml_writer
     cli_xml_writer.exportConfiguration(&data_store, base_path, allocator) catch {
         return SpdSxError.WriteError;
     };
+
+    // Delete extra kit files that are no longer in the project
+    // This ensures deleted kits don't reappear on reload
+    deleteExtraKitFiles(base_path, project.kit_count);
+
+    // Delete extra wave parameter files beyond the current wave count
+    // This ensures deleted waves don't reappear on reload
+    // Waves are renumbered consecutively (0, 1, 2, ...) so any wave files
+    // beyond the current count are orphaned and should be removed
+    deleteExtraWaveFiles(base_path, project.sample_library.count);
+}
+
+/// Delete kit files beyond the current kit count
+fn deleteExtraKitFiles(base_path: []const u8, kit_count: u8) void {
+    var path_buf: [512]u8 = undefined;
+
+    // Check for kit files beyond our current count and delete them
+    var i: usize = kit_count;
+    while (i < 300) : (i += 1) {
+        const kit_path = std.fmt.bufPrint(&path_buf, "{s}/SPD-SX/KIT/kit{d:0>3}.spd", .{ base_path, i }) catch continue;
+
+        // Try to delete the file - if it doesn't exist, we can stop searching
+        // (assuming kit files are contiguous)
+        std.fs.cwd().deleteFile(kit_path) catch |err| {
+            if (err == error.FileNotFound) {
+                // No more kit files to delete
+                break;
+            }
+            // Other errors (permission, etc.) - continue trying
+            continue;
+        };
+    }
+}
+
+/// Delete wave parameter files beyond the current wave count
+/// Waves are stored as SPD-SX/WAVE/PRM/XX/YY.spd where XX is folder (00-99) and YY is file (00-99)
+/// Wave ID = folder * 100 + file
+fn deleteExtraWaveFiles(base_path: []const u8, wave_count: u16) void {
+    var path_buf: [512]u8 = undefined;
+
+    // Start from the first wave ID beyond our count
+    var wave_id: usize = wave_count;
+    var consecutive_not_found: usize = 0;
+
+    // Scan through possible wave locations and delete extra files
+    // Stop after finding 100 consecutive missing files (indicates end of waves)
+    while (wave_id < 9900 and consecutive_not_found < 100) : (wave_id += 1) {
+        const folder = wave_id / 100;
+        const file = wave_id % 100;
+
+        const wave_path = std.fmt.bufPrint(&path_buf, "{s}/SPD-SX/WAVE/PRM/{d:0>2}/{d:0>2}.spd", .{ base_path, folder, file }) catch continue;
+
+        std.fs.cwd().deleteFile(wave_path) catch |err| {
+            if (err == error.FileNotFound) {
+                consecutive_not_found += 1;
+                continue;
+            }
+            // Other errors - continue trying
+            continue;
+        };
+
+        // File was deleted successfully, reset the not-found counter
+        consecutive_not_found = 0;
+    }
 }
 
 /// Convert a UI Kit to a CLI Kit
@@ -294,6 +564,21 @@ fn convertUiKitToCliKit(allocator: Allocator, ui_kit: *const models.Kit, library
     if (@intFromEnum(ui_kit.pad_link_target) > 0) {
         cli_kit.link_pad1 = @intCast(@intFromEnum(ui_kit.pad_link_target) - 1);
     }
+
+    // Convert FX1 settings
+    cli_kit.fx1_sw = if (ui_kit.fx1_switch) 1 else 0;
+    cli_kit.fx1_type = @intFromEnum(ui_kit.fx1_type);
+    for (ui_kit.fx1_params.params, 0..) |prm, idx| {
+        cli_kit.fx1_prm[idx] = prm;
+    }
+
+    // Convert FX2 settings
+    cli_kit.fx2_sw = if (ui_kit.fx2_switch) 1 else 0;
+    cli_kit.fx2_type = @intFromEnum(ui_kit.fx2_type);
+    for (ui_kit.fx2_params.params, 0..) |prm, idx| {
+        cli_kit.fx2_prm[idx] = prm;
+    }
+    cli_kit.fx2_asgn = @intFromEnum(ui_kit.fx2_assign);
 
     // Convert pads
     const pad_count = @min(cli_types.MAX_PADS, models.Kit.NUM_PADS);
@@ -322,7 +607,7 @@ fn convertUiPadToCliPad(ui_pad: *const models.Pad, library: *const models.Sample
     // Mute group
     cli_pad.mute_grp = @intFromEnum(ui_pad.mute_group);
 
-    // MIDI note
+    // MIDI note (-1 = OFF, 0-127 = note number)
     cli_pad.note_num = ui_pad.midi_note;
 
     // Loop mode
@@ -342,6 +627,27 @@ fn convertUiPadToCliPad(ui_pad: *const models.Pad, library: *const models.Sample
 
     // Output assignment
     cli_pad.out_asgn = @intFromEnum(ui_pad.output_assign);
+
+    // Reverse playback
+    cli_pad.reverse = if (ui_pad.reverse) 1 else 0;
+
+    // MIDI channel (UI uses 0=GLOBAL, 1-16 for channels; CLI uses -1 for GLOBAL, 0-15)
+    if (ui_pad.midi_channel == .global) {
+        cli_pad.pad_midi_ch = -1;
+    } else {
+        cli_pad.pad_midi_ch = @as(i8, @intCast(@intFromEnum(ui_pad.midi_channel))) - 1;
+    }
+
+    // MIDI External Control (OFF or ON -> CLI uses 0 or 1)
+    cli_pad.midi_ctrl = if (ui_pad.midi_ext_ctrl) 1 else 0;
+
+    // Gate time (UI: 0 = OFF, 1 = ALT, 2-81 = 0.1s-8.0s)
+    // (CLI: -1 = OFF, 0 = ALT, 1-80 = 0.1s-8.0s)
+    if (ui_pad.midi_gate_time == 0) {
+        cli_pad.gate_time = -1; // OFF
+    } else {
+        cli_pad.gate_time = @intCast(@as(i16, ui_pad.midi_gate_time) - 1);
+    }
 
     // Find wave index in library
     if (ui_pad.has_sample) {

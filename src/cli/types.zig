@@ -1,31 +1,15 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-/// Maximum number of pads per kit
 pub const MAX_PADS = 15;
-
-/// Maximum name length for kit names
 pub const KIT_NAME_LENGTH = 8;
-
-/// Maximum sub-name length for kits
 pub const KIT_SUBNAME_LENGTH = 16;
-
-/// Maximum name length for waves
 pub const WAVE_NAME_LENGTH = 12;
-
-/// Maximum name length for tags
 pub const TAG_NAME_LENGTH = 12;
-
-/// Maximum name length for kit chains
 pub const KITCHAIN_NAME_LENGTH = 10;
-
-/// Maximum steps in a kit chain
 pub const KITCHAIN_MAX_STEPS = 20;
-
-/// Maximum FX parameters
 pub const FX_PARAM_COUNT = 20;
 
-/// Pad configuration - represents a single pad in a kit
 pub const Pad = struct {
     wv: i32 = -1,
     wv_level: u8 = 100,
@@ -47,17 +31,14 @@ pub const Pad = struct {
     sub_wv_level: u8 = 100,
     sub_wv_pan: u8 = 15,
 
-    /// Initialize pad with default values
     pub fn init() Pad {
         return .{};
     }
 
-    /// Reset pad to default values
     pub fn reset(self: *Pad) void {
         self.* = Pad.init();
     }
 
-    /// Get pan text representation (L15 to R15, CENTER)
     pub fn getPanText(pan_value: u8) []const u8 {
         const pan_texts = [_][]const u8{
             "L15", "L14", "L13", "L12", "L11", "L10", "L9", "L8",
@@ -71,7 +52,6 @@ pub const Pad = struct {
         return "?";
     }
 
-    /// Get MIDI channel text (GLOBAL or 1-16)
     pub fn getMidiChText(ch: i8) []const u8 {
         if (ch == -1) return "GLOBAL";
         if (ch >= 0 and ch < 16) {
@@ -85,7 +65,6 @@ pub const Pad = struct {
     }
 };
 
-/// Kit configuration - represents a complete drum kit
 pub const Kit = struct {
     kit_id: u32 = 0,
     level: u8 = 100,
@@ -117,50 +96,42 @@ pub const Kit = struct {
     // Pads
     pads: [MAX_PADS]Pad = [_]Pad{Pad.init()} ** MAX_PADS,
 
-    /// Initialize kit with default values
     pub fn init() Kit {
         var kit = Kit{};
         kit.fx1_prm[0] = 9; // Default FX1 param 0
         return kit;
     }
 
-    /// Reset kit to default values
     pub fn reset(self: *Kit) void {
         self.* = Kit.init();
     }
 
-    /// Reset all pads to default values
     pub fn resetPads(self: *Kit) void {
         for (&self.pads) |*pad| {
             pad.reset();
         }
     }
 
-    /// Get kit name as string
     pub fn getName(self: *const Kit, allocator: Allocator) ![]u8 {
         const encoding = @import("encoding.zig");
         return encoding.decodeString(&self.nm, allocator);
     }
 
-    /// Set kit name from string
     pub fn setName(self: *Kit, name: []const u8) void {
         const encoding = @import("encoding.zig");
         encoding.encodeString(name, &self.nm);
     }
 
-    /// Get kit sub-name as string
     pub fn getSubName(self: *const Kit, allocator: Allocator) ![]u8 {
         const encoding = @import("encoding.zig");
         return encoding.decodeString(&self.sub_nm, allocator);
     }
 
-    /// Set kit sub-name from string
     pub fn setSubName(self: *Kit, name: []const u8) void {
         const encoding = @import("encoding.zig");
         encoding.encodeString(name, &self.sub_nm);
     }
 
-    /// Duplicate kit data from another kit
     pub fn copyFrom(self: *Kit, other: *const Kit) void {
         self.level = other.level;
         self.tempo = other.tempo;
@@ -179,7 +150,6 @@ pub const Kit = struct {
     }
 };
 
-/// Wave/Sample configuration
 pub const Wave = struct {
     wave_id: u32 = 0,
 
@@ -203,29 +173,24 @@ pub const Wave = struct {
     // Modification flag
     modified: bool = false,
 
-    /// Initialize wave with default values
     pub fn init() Wave {
         return .{};
     }
 
-    /// Get wave name as string
     pub fn getName(self: *const Wave, allocator: Allocator) ![]u8 {
         const encoding = @import("encoding.zig");
         return encoding.decodeString(&self.nm, allocator);
     }
 
-    /// Set wave name from string
     pub fn setName(self: *Wave, name: []const u8) void {
         const encoding = @import("encoding.zig");
         encoding.encodeString(name, &self.nm);
     }
 
-    /// Get path as string slice
     pub fn getPath(self: *const Wave) []const u8 {
         return self.path[0..self.path_len];
     }
 
-    /// Set path from string
     pub fn setPath(self: *Wave, path_str: []const u8) void {
         const len = @min(path_str.len, self.path.len);
         @memcpy(self.path[0..len], path_str[0..len]);
@@ -233,7 +198,6 @@ pub const Wave = struct {
     }
 };
 
-/// Tag list entry
 pub const TagListEntry = struct {
     // Tag name (12 characters)
     nm: [TAG_NAME_LENGTH]u8 = [_]u8{0} ** TAG_NAME_LENGTH,
@@ -246,20 +210,17 @@ pub const TagListEntry = struct {
         return .{};
     }
 
-    /// Get tag name as string
     pub fn getName(self: *const TagListEntry, allocator: Allocator) ![]u8 {
         const encoding = @import("encoding.zig");
         return encoding.decodeString(&self.nm, allocator);
     }
 
-    /// Set tag name from string
     pub fn setName(self: *TagListEntry, name: []const u8) void {
         const encoding = @import("encoding.zig");
         encoding.encodeString(name, &self.nm);
     }
 };
 
-/// Kit Chain configuration
 pub const KitChain = struct {
     // Chain name (10 characters)
     nm: [KITCHAIN_NAME_LENGTH]u8 = [_]u8{0} ** KITCHAIN_NAME_LENGTH,
@@ -267,24 +228,20 @@ pub const KitChain = struct {
     // Steps (kit indices, -1 for empty)
     steps: [KITCHAIN_MAX_STEPS]i32 = [_]i32{-1} ** KITCHAIN_MAX_STEPS,
 
-    /// Initialize kit chain with default values
     pub fn init() KitChain {
         return .{};
     }
 
-    /// Get chain name as string
     pub fn getName(self: *const KitChain, allocator: Allocator) ![]u8 {
         const encoding = @import("encoding.zig");
         return encoding.decodeString(&self.nm, allocator);
     }
 
-    /// Set chain name from string
     pub fn setName(self: *KitChain, name: []const u8) void {
         const encoding = @import("encoding.zig");
         encoding.encodeString(name, &self.nm);
     }
 
-    /// Get step at index
     pub fn getStep(self: *const KitChain, index: usize) i32 {
         if (index < KITCHAIN_MAX_STEPS) {
             return self.steps[index];
@@ -292,7 +249,6 @@ pub const KitChain = struct {
         return -1;
     }
 
-    /// Set step at index
     pub fn setStep(self: *KitChain, index: usize, kit_index: i32) void {
         if (index < KITCHAIN_MAX_STEPS) {
             self.steps[index] = kit_index;

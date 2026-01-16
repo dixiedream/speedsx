@@ -1,12 +1,56 @@
 const std = @import("std");
 
+/// A fixed-capacity string type that avoids repetitive array+length patterns
+pub fn BoundedString(comptime capacity: usize) type {
+    const LenType = if (capacity <= 255) u8 else u16;
+
+    return struct {
+        const Self = @This();
+
+        data: [capacity]u8 = [_]u8{0} ** capacity,
+        len: LenType = 0,
+
+        /// Set the string content, truncating if too long
+        pub fn set(self: *Self, str: []const u8) void {
+            const copy_len = @min(str.len, capacity);
+            @memcpy(self.data[0..copy_len], str[0..copy_len]);
+            // Zero out remaining bytes
+            if (copy_len < capacity) {
+                @memset(self.data[copy_len..], 0);
+            }
+            self.len = @intCast(copy_len);
+        }
+
+        /// Get the string as a slice
+        pub fn get(self: *const Self) []const u8 {
+            return self.data[0..self.len];
+        }
+
+        /// Clear the string
+        pub fn clear(self: *Self) void {
+            @memset(&self.data, 0);
+            self.len = 0;
+        }
+
+        /// Check if empty
+        pub fn isEmpty(self: *const Self) bool {
+            return self.len == 0;
+        }
+
+        /// Get the capacity
+        pub fn getCapacity() usize {
+            return capacity;
+        }
+    };
+}
+
 /// Play mode for a pad sample
-pub const PlayMode = enum(u8) {
+pub const TemplateMode = enum(u8) {
     single = 0, // Play once
     phrase = 1, // Loop continuously
     loop = 2, // Loop continuously
 
-    pub fn toString(self: PlayMode) []const u8 {
+    pub fn toString(self: TemplateMode) []const u8 {
         return switch (self) {
             .single => "Single",
             .phrase => "Phrase",
@@ -84,7 +128,7 @@ pub const TriggerMode = enum(u8) {
 
     pub fn toString(self: TriggerMode) []const u8 {
         return switch (self) {
-            .shot => "NORMAL",
+            .shot => "SHOT",
             .alt => "ALT"
         };
     }
@@ -178,37 +222,39 @@ pub const PadLink = enum(u8) {
 
 /// Represents a sample that can be loaded onto a pad
 pub const Sample = struct {
-    name: [64]u8 = [_]u8{0} ** 64,
-    name_len: u8 = 0,
-    file_path: [256]u8 = [_]u8{0} ** 256,
-    path_len: u16 = 0,
+    name: BoundedString(64) = .{},
+    file_path: BoundedString(256) = .{},
     duration_ms: u32 = 0,
     sample_rate: u32 = 44100,
     channels: u8 = 2,
     loaded: bool = false,
 
+    // Wave metadata from SPD-SX
+    tag: u8 = 1, // Tag category (1-12)
+    tempo: u16 = 0, // Sample tempo for sync (0 = not set)
+    beat: u8 = 0, // Beat value
+    measure: u8 = 0, // Measure value
+    start_point: u32 = 0, // Sample start point (in samples)
+    end_point: u32 = 0, // Sample end point (in samples)
+
     pub fn init() Sample {
         return Sample{};
     }
 
-    pub fn setName(self: *Sample, name: []const u8) void {
-        const len = @min(name.len, 64);
-        @memcpy(self.name[0..len], name[0..len]);
-        self.name_len = @intCast(len);
+    pub fn setName(self: *Sample, new_name: []const u8) void {
+        self.name.set(new_name);
     }
 
     pub fn getName(self: *const Sample) []const u8 {
-        return self.name[0..self.name_len];
+        return self.name.get();
     }
 
     pub fn setPath(self: *Sample, path: []const u8) void {
-        const len = @min(path.len, 256);
-        @memcpy(self.file_path[0..len], path[0..len]);
-        self.path_len = @intCast(len);
+        self.file_path.set(path);
     }
 
     pub fn getPath(self: *const Sample) []const u8 {
-        return self.file_path[0..self.path_len];
+        return self.file_path.get();
     }
 };
 
@@ -220,16 +266,15 @@ pub const Pad = struct {
     pan: i8 = 0, // -64 to +63 (center = 0)
     pitch: i8 = 0, // -24 to +24 semitones
     decay: u8 = 100, // 0-100%
-    play_mode: PlayMode = .single,
+    play_mode: TemplateMode = .single,
     mute_group: MuteGroup = .off,
-    midi_note: u8 = 36, // Default to C2
+    midi_note: i16 = -1, // -1 = OFF, 0-127 = note number
     velocity_curve: u8 = 0, // 0 = linear, 1-4 = various curves
     trigger_type: TriggerType = .head,
     enabled: bool = true,
     has_sample: bool = false,
 
     // Mode settings
-    // loop: bool = false,
     loop_mode: LoopMode = .off,
     trigger_mode: TriggerMode = .shot,
     dynamics: Dynamics = .off,
@@ -242,6 +287,56 @@ pub const Pad = struct {
     sub_volume: u8 = 100, // 0-127
     sub_pan: i8 = 0, // -64 to +63
     has_sub_sample: bool = false,
+
+    // MIDI settings
+    midi_channel: MidiChannel = .global, // GLOBAL or 1-16
+    midi_ext_ctrl: bool = false, // OFF or ON
+    midi_gate_time: u8 = 0, // 0 = OFF, 1 = ALT, 2-81 = 0.1s-8.0s
+
+    // Playback settings
+    reverse: bool = false, // Reverse playback
+
+    pub const MidiChannel = enum(u8) {
+        global = 0,
+        ch1 = 1,
+        ch2 = 2,
+        ch3 = 3,
+        ch4 = 4,
+        ch5 = 5,
+        ch6 = 6,
+        ch7 = 7,
+        ch8 = 8,
+        ch9 = 9,
+        ch10 = 10,
+        ch11 = 11,
+        ch12 = 12,
+        ch13 = 13,
+        ch14 = 14,
+        ch15 = 15,
+        ch16 = 16,
+
+        pub fn toString(self: MidiChannel) []const u8 {
+            return switch (self) {
+                .global => "GLOBAL",
+                .ch1 => "1",
+                .ch2 => "2",
+                .ch3 => "3",
+                .ch4 => "4",
+                .ch5 => "5",
+                .ch6 => "6",
+                .ch7 => "7",
+                .ch8 => "8",
+                .ch9 => "9",
+                .ch10 => "10",
+                .ch11 => "11",
+                .ch12 => "12",
+                .ch13 => "13",
+                .ch14 => "14",
+                .ch15 => "15",
+                .ch16 => "16",
+            };
+        }
+    };
 
     pub const TriggerType = enum(u8) {
         head = 0,
@@ -292,10 +387,8 @@ pub const Pad = struct {
 
 /// A kit is a collection of pad configurations
 pub const Kit = struct {
-    name: [32]u8 = [_]u8{0} ** 32,
-    name_len: u8 = 0,
-    sub_name: [32]u8 = [_]u8{0} ** 32,
-    sub_name_len: u8 = 0,
+    name: BoundedString(32) = .{},
+    sub_name: BoundedString(32) = .{},
     pads: [NUM_PADS]Pad = undefined,
     tempo: u16 = 120, // BPM (stored as integer, but displayed as float)
     tempo_decimal: u8 = 0, // Decimal part of tempo (0-9)
@@ -305,36 +398,94 @@ pub const Kit = struct {
     pad_link_target: PadLink = .off,
     modified: bool = false,
 
-    pub const NUM_PADS = 9; // SPD-SX has 9 pads
+    // FX1 settings
+    fx1_switch: bool = true,
+    fx1_type: Fx1Type = .thru,
+    fx1_params: FxParams = FxParams.init(),
+
+    // FX2 settings
+    fx2_switch: bool = true,
+    fx2_type: Fx2Type = .thru,
+    fx2_params: FxParams = FxParams.init(),
+    fx2_assign: Fx2Assign = .all,
+
+    // SPD-SX has 15 configurable pads:
+    // 0-8: Main pads (physical pads on the unit)
+    // 9-12: External triggers (TRIG1-4)
+    // 13-14: Foot switches (FS1-2)
+    pub const NUM_PADS = 15;
+    pub const NUM_MAIN_PADS = 9;
+    pub const NUM_TRIGGERS = 4;
+    pub const NUM_FOOTSWITCHES = 2;
 
     pub fn init() Kit {
         var kit = Kit{};
-        for (&kit.pads, 0..) |*pad, i| {
+        for (&kit.pads) |*pad| {
             pad.* = Pad.init();
-            pad.midi_note = @intCast(36 + i); // C2, C#2, D2, etc.
         }
         kit.setName("New Kit");
         return kit;
     }
 
-    pub fn setName(self: *Kit, name: []const u8) void {
-        const len = @min(name.len, 32);
-        @memcpy(self.name[0..len], name[0..len]);
-        self.name_len = @intCast(len);
+    /// Get a main pad (0-8)
+    pub fn getMainPad(self: *Kit, index: usize) *Pad {
+        return &self.pads[index];
+    }
+
+    /// Get a trigger pad (0-3 -> pads 9-12)
+    pub fn getTriggerPad(self: *Kit, index: usize) *Pad {
+        return &self.pads[NUM_MAIN_PADS + index];
+    }
+
+    /// Get a footswitch pad (0-1 -> pads 13-14)
+    pub fn getFootswitchPad(self: *Kit, index: usize) *Pad {
+        return &self.pads[NUM_MAIN_PADS + NUM_TRIGGERS + index];
+    }
+
+    /// Check if pad index is a main pad
+    pub fn isMainPad(index: u8) bool {
+        return index < NUM_MAIN_PADS;
+    }
+
+    /// Check if pad index is a trigger
+    pub fn isTriggerPad(index: u8) bool {
+        return index >= NUM_MAIN_PADS and index < NUM_MAIN_PADS + NUM_TRIGGERS;
+    }
+
+    /// Check if pad index is a footswitch
+    pub fn isFootswitchPad(index: u8) bool {
+        return index >= NUM_MAIN_PADS + NUM_TRIGGERS and index < NUM_PADS;
+    }
+
+    /// Get display name for a pad index
+    pub fn getPadDisplayName(index: u8) []const u8 {
+        if (index < NUM_MAIN_PADS) {
+            const names = [_][]const u8{ "PAD 1", "PAD 2", "PAD 3", "PAD 4", "PAD 5", "PAD 6", "PAD 7", "PAD 8", "PAD 9" };
+            return names[index];
+        } else if (index < NUM_MAIN_PADS + NUM_TRIGGERS) {
+            const names = [_][]const u8{ "TRIG 1", "TRIG 2", "TRIG 3", "TRIG 4" };
+            return names[index - NUM_MAIN_PADS];
+        } else if (index < NUM_PADS) {
+            const names = [_][]const u8{ "FS 1", "FS 2" };
+            return names[index - NUM_MAIN_PADS - NUM_TRIGGERS];
+        }
+        return "?";
+    }
+
+    pub fn setName(self: *Kit, new_name: []const u8) void {
+        self.name.set(new_name);
     }
 
     pub fn getName(self: *const Kit) []const u8 {
-        return self.name[0..self.name_len];
+        return self.name.get();
     }
 
-    pub fn setSubName(self: *Kit, name: []const u8) void {
-        const len = @min(name.len, 32);
-        @memcpy(self.sub_name[0..len], name[0..len]);
-        self.sub_name_len = @intCast(len);
+    pub fn setSubName(self: *Kit, new_name: []const u8) void {
+        self.sub_name.set(new_name);
     }
 
     pub fn getSubName(self: *const Kit) []const u8 {
-        return self.sub_name[0..self.sub_name_len];
+        return self.sub_name.get();
     }
 
     pub fn getPad(self: *Kit, index: usize) *Pad {
@@ -367,11 +518,11 @@ pub const Project = struct {
     kits: [MAX_KITS]Kit = undefined,
     kit_count: u8 = 0,
     current_kit_index: u8 = 0,
-    project_name: [64]u8 = [_]u8{0} ** 64,
-    name_len: u8 = 0,
+    project_name: BoundedString(64) = .{},
     sample_library: SampleLibrary = SampleLibrary.init(),
-    file_path: [256]u8 = [_]u8{0} ** 256,
-    file_path_len: u16 = 0,
+    kit_chain_library: KitChainLibrary = KitChainLibrary.init(),
+    tag_library: TagLibrary = TagLibrary.init(),
+    file_path: BoundedString(256) = .{},
 
     pub const MAX_KITS = 100;
 
@@ -382,24 +533,20 @@ pub const Project = struct {
         return project;
     }
 
-    pub fn setName(self: *Project, name: []const u8) void {
-        const len = @min(name.len, 64);
-        @memcpy(self.project_name[0..len], name[0..len]);
-        self.name_len = @intCast(len);
+    pub fn setName(self: *Project, new_name: []const u8) void {
+        self.project_name.set(new_name);
     }
 
     pub fn getName(self: *const Project) []const u8 {
-        return self.project_name[0..self.name_len];
+        return self.project_name.get();
     }
 
     pub fn setFilePath(self: *Project, path: []const u8) void {
-        const len = @min(path.len, 256);
-        @memcpy(self.file_path[0..len], path[0..len]);
-        self.file_path_len = @intCast(len);
+        self.file_path.set(path);
     }
 
     pub fn getFilePath(self: *const Project) []const u8 {
-        return self.file_path[0..self.file_path_len];
+        return self.file_path.get();
     }
 
     pub fn addKit(self: *Project) bool {
@@ -535,7 +682,210 @@ pub const SampleLibrary = struct {
     }
 };
 
-/// Effect types available
+/// Tag entry for categorizing samples
+pub const TagEntry = struct {
+    name: BoundedString(16) = .{},
+    order: u8 = 0,
+
+    pub fn init() TagEntry {
+        return TagEntry{};
+    }
+
+    pub fn setName(self: *TagEntry, new_name: []const u8) void {
+        self.name.set(new_name);
+    }
+
+    pub fn getName(self: *const TagEntry) []const u8 {
+        return self.name.get();
+    }
+};
+
+/// Tag library - collection of sample categories
+pub const TagLibrary = struct {
+    tags: [MAX_TAGS]TagEntry = undefined,
+    count: u8 = 0,
+
+    pub const MAX_TAGS = 12;
+
+    // Default SPD-SX tags
+    const DEFAULT_TAGS = [_][]const u8{
+        "KICK",
+        "SNARE",
+        "HI-HAT",
+        "CYMBAL",
+        "TOM",
+        "PERCUSSION",
+        "PHRASE",
+        "FX",
+        "LOOP",
+        "OTHERS",
+        "USER1",
+        "USER2",
+    };
+
+    pub fn init() TagLibrary {
+        var lib = TagLibrary{};
+        // Initialize with default tags
+        for (DEFAULT_TAGS, 0..) |tag_name, i| {
+            lib.tags[i] = TagEntry.init();
+            lib.tags[i].setName(tag_name);
+            lib.tags[i].order = @intCast(i);
+        }
+        lib.count = MAX_TAGS;
+        return lib;
+    }
+
+    pub fn getTag(self: *TagLibrary, index: u8) ?*TagEntry {
+        if (index >= self.count) return null;
+        return &self.tags[index];
+    }
+
+    pub fn setTagName(self: *TagLibrary, index: u8, name: []const u8) void {
+        if (index < self.count) {
+            self.tags[index].setName(name);
+        }
+    }
+
+    pub fn getTagName(self: *const TagLibrary, index: u8) []const u8 {
+        if (index < self.count) {
+            return self.tags[index].getName();
+        }
+        return "Unknown";
+    }
+};
+
+/// FX1 effect types (matches SPD-SX FX1 types)
+pub const Fx1Type = enum(u8) {
+    thru = 0,
+    equalizer = 1,
+    isolator = 2,
+    low_boost = 3,
+    super_filter = 4,
+    step_filter = 5,
+    compressor = 6,
+    limiter = 7,
+    overdrive = 8,
+    distortion = 9,
+    bit_crasher = 10,
+    tremolo = 11,
+    phaser = 12,
+    flanger = 13,
+    chorus = 14,
+    delay = 15,
+    tape_echo = 16,
+    reverb = 17,
+    ring_mod = 18,
+    slicer = 19,
+
+    pub fn toString(self: Fx1Type) []const u8 {
+        return switch (self) {
+            .thru => "THRU",
+            .equalizer => "EQUALIZER",
+            .isolator => "ISOLATOR",
+            .low_boost => "LOW BOOST",
+            .super_filter => "SUPER FILTER",
+            .step_filter => "STEP FILTER",
+            .compressor => "COMPRESSOR",
+            .limiter => "LIMITER",
+            .overdrive => "OVERDRIVE",
+            .distortion => "DISTORTION",
+            .bit_crasher => "BIT CRASHER",
+            .tremolo => "TREMOLO",
+            .phaser => "PHASER",
+            .flanger => "FLANGER",
+            .chorus => "CHORUS",
+            .delay => "DELAY",
+            .tape_echo => "TAPE ECHO",
+            .reverb => "REVERB",
+            .ring_mod => "RING MOD",
+            .slicer => "SLICER",
+        };
+    }
+};
+
+/// FX2 effect types (matches SPD-SX FX2 types)
+pub const Fx2Type = enum(u8) {
+    thru = 0,
+    hall = 1,
+    room = 2,
+    plate = 3,
+    delay = 4,
+    pan_delay = 5,
+    tape_echo = 6,
+
+    pub fn toString(self: Fx2Type) []const u8 {
+        return switch (self) {
+            .thru => "THRU",
+            .hall => "HALL",
+            .room => "ROOM",
+            .plate => "PLATE",
+            .delay => "DELAY",
+            .pan_delay => "PAN DELAY",
+            .tape_echo => "TAPE ECHO",
+        };
+    }
+};
+
+/// FX2 assignment (which pads send to FX2)
+pub const Fx2Assign = enum(u8) {
+    all = 0,
+    pad1 = 1,
+    pad2 = 2,
+    pad3 = 3,
+    pad4 = 4,
+    pad5 = 5,
+    pad6 = 6,
+    pad7 = 7,
+    pad8 = 8,
+    pad9 = 9,
+    trig1 = 10,
+    trig2 = 11,
+    trig3 = 12,
+    trig4 = 13,
+    fs1 = 14,
+    fs2 = 15,
+
+    pub fn toString(self: Fx2Assign) []const u8 {
+        return switch (self) {
+            .all => "ALL",
+            .pad1 => "PAD1",
+            .pad2 => "PAD2",
+            .pad3 => "PAD3",
+            .pad4 => "PAD4",
+            .pad5 => "PAD5",
+            .pad6 => "PAD6",
+            .pad7 => "PAD7",
+            .pad8 => "PAD8",
+            .pad9 => "PAD9",
+            .trig1 => "TRIG1",
+            .trig2 => "TRIG2",
+            .trig3 => "TRIG3",
+            .trig4 => "TRIG4",
+            .fs1 => "FS1",
+            .fs2 => "FS2",
+        };
+    }
+};
+
+/// FX parameters (20 parameters per FX unit)
+pub const FxParams = struct {
+    params: [20]u8 = [_]u8{0} ** 20,
+
+    pub fn init() FxParams {
+        return FxParams{};
+    }
+
+    pub fn get(self: *const FxParams, index: usize) u8 {
+        if (index < 20) return self.params[index];
+        return 0;
+    }
+
+    pub fn set(self: *FxParams, index: usize, value: u8) void {
+        if (index < 20) self.params[index] = value;
+    }
+};
+
+/// Effect types available (legacy, kept for compatibility)
 pub const EffectType = enum(u8) {
     none = 0,
     reverb = 1,
@@ -585,3 +935,292 @@ pub const MidiConfig = struct {
         }
     };
 };
+
+/// Kit Chain - a sequence of kits that can be triggered in order
+pub const KitChain = struct {
+    name: BoundedString(32) = .{},
+    steps: [MAX_STEPS]i16 = [_]i16{-1} ** MAX_STEPS, // Kit indices, -1 = empty
+    step_count: u8 = 0,
+
+    pub const MAX_STEPS = 20;
+
+    pub fn init() KitChain {
+        return KitChain{};
+    }
+
+    pub fn setName(self: *KitChain, new_name: []const u8) void {
+        self.name.set(new_name);
+    }
+
+    pub fn getName(self: *const KitChain) []const u8 {
+        return self.name.get();
+    }
+
+    /// Add a kit to the chain
+    pub fn addStep(self: *KitChain, kit_index: u8) bool {
+        if (self.step_count >= MAX_STEPS) return false;
+        self.steps[self.step_count] = kit_index;
+        self.step_count += 1;
+        return true;
+    }
+
+    /// Remove a step at index
+    pub fn removeStep(self: *KitChain, index: u8) bool {
+        if (index >= self.step_count) return false;
+        // Shift steps down
+        var i: u8 = index;
+        while (i < self.step_count - 1) : (i += 1) {
+            self.steps[i] = self.steps[i + 1];
+        }
+        self.steps[self.step_count - 1] = -1;
+        self.step_count -= 1;
+        return true;
+    }
+
+    /// Move a step up in the chain
+    pub fn moveStepUp(self: *KitChain, index: u8) bool {
+        if (index == 0 or index >= self.step_count) return false;
+        const temp = self.steps[index];
+        self.steps[index] = self.steps[index - 1];
+        self.steps[index - 1] = temp;
+        return true;
+    }
+
+    /// Move a step down in the chain
+    pub fn moveStepDown(self: *KitChain, index: u8) bool {
+        if (index >= self.step_count - 1) return false;
+        const temp = self.steps[index];
+        self.steps[index] = self.steps[index + 1];
+        self.steps[index + 1] = temp;
+        return true;
+    }
+
+    /// Get kit index at step
+    pub fn getStep(self: *const KitChain, index: u8) ?u8 {
+        if (index >= self.step_count) return null;
+        const step = self.steps[index];
+        if (step < 0) return null;
+        return @intCast(step);
+    }
+
+    /// Clear all steps
+    pub fn clear(self: *KitChain) void {
+        for (&self.steps) |*step| {
+            step.* = -1;
+        }
+        self.step_count = 0;
+    }
+
+    /// Duplicate the chain
+    pub fn duplicate(self: *const KitChain) KitChain {
+        return self.*;
+    }
+};
+
+/// Kit Chain Library - collection of all kit chains
+pub const KitChainLibrary = struct {
+    chains: [MAX_CHAINS]KitChain = undefined,
+    count: u8 = 0,
+
+    pub const MAX_CHAINS = 32;
+
+    pub fn init() KitChainLibrary {
+        var lib = KitChainLibrary{};
+        for (&lib.chains) |*chain| {
+            chain.* = KitChain.init();
+        }
+        return lib;
+    }
+
+    /// Add a new chain
+    pub fn addChain(self: *KitChainLibrary) ?u8 {
+        if (self.count >= MAX_CHAINS) return null;
+        const index = self.count;
+        self.chains[index] = KitChain.init();
+        self.chains[index].setName("New Chain");
+        self.count += 1;
+        return index;
+    }
+
+    /// Delete a chain
+    pub fn deleteChain(self: *KitChainLibrary, index: u8) bool {
+        if (index >= self.count) return false;
+        // Shift chains down
+        var i: u8 = index;
+        while (i < self.count - 1) : (i += 1) {
+            self.chains[i] = self.chains[i + 1];
+        }
+        self.chains[self.count - 1] = KitChain.init();
+        self.count -= 1;
+        return true;
+    }
+
+    /// Get a chain by index
+    pub fn getChain(self: *KitChainLibrary, index: u8) ?*KitChain {
+        if (index >= self.count) return null;
+        return &self.chains[index];
+    }
+
+    /// Duplicate a chain
+    pub fn duplicateChain(self: *KitChainLibrary, index: u8) ?u8 {
+        if (index >= self.count or self.count >= MAX_CHAINS) return null;
+        const new_index = self.count;
+        self.chains[new_index] = self.chains[index].duplicate();
+        self.count += 1;
+        return new_index;
+    }
+};
+
+// Tests
+const testing = @import("std").testing;
+
+test "BoundedString basic operations" {
+    var str = BoundedString(32){};
+    try testing.expect(str.isEmpty());
+    try testing.expectEqual(@as(usize, 0), str.len);
+
+    str.set("Hello");
+    try testing.expect(!str.isEmpty());
+    try testing.expectEqualStrings("Hello", str.get());
+
+    str.set("World");
+    try testing.expectEqualStrings("World", str.get());
+
+    str.clear();
+    try testing.expect(str.isEmpty());
+}
+
+test "BoundedString truncation" {
+    var str = BoundedString(8){};
+    str.set("This is a very long string");
+    try testing.expectEqual(@as(usize, 8), str.len);
+    try testing.expectEqualStrings("This is ", str.get());
+}
+
+test "Sample initialization" {
+    var sample = Sample.init();
+    try testing.expect(!sample.loaded);
+    try testing.expectEqual(@as(u32, 0), sample.duration_ms);
+    try testing.expectEqualStrings("", sample.getName());
+}
+
+test "Pad sample operations" {
+    var pad = Pad.init();
+    try testing.expect(!pad.has_sample);
+    try testing.expect(!pad.has_sub_sample);
+
+    pad.loadSample("Kick", "/path/to/kick.wav");
+    try testing.expect(pad.has_sample);
+    try testing.expectEqualStrings("Kick", pad.sample.getName());
+
+    pad.loadSubSample("Snare", "/path/to/snare.wav");
+    try testing.expect(pad.has_sub_sample);
+
+    pad.clearSample();
+    try testing.expect(!pad.has_sample);
+    try testing.expect(pad.has_sub_sample); // Sub should still exist
+
+    pad.clearSubSample();
+    try testing.expect(!pad.has_sub_sample);
+}
+
+test "Kit initialization and pad access" {
+    var kit = Kit.init();
+    try testing.expectEqualStrings("New Kit", kit.getName());
+    try testing.expectEqual(@as(u16, 120), kit.tempo);
+
+    // Check MIDI notes default to OFF (-1)
+    try testing.expectEqual(@as(i16, -1), kit.pads[0].midi_note);
+    try testing.expectEqual(@as(i16, -1), kit.pads[1].midi_note);
+    try testing.expectEqual(@as(i16, -1), kit.pads[14].midi_note);
+
+    // Test pad type checks
+    try testing.expect(Kit.isMainPad(0));
+    try testing.expect(Kit.isMainPad(8));
+    try testing.expect(!Kit.isMainPad(9));
+
+    try testing.expect(Kit.isTriggerPad(9));
+    try testing.expect(Kit.isTriggerPad(12));
+    try testing.expect(!Kit.isTriggerPad(13));
+
+    try testing.expect(Kit.isFootswitchPad(13));
+    try testing.expect(Kit.isFootswitchPad(14));
+    try testing.expect(!Kit.isFootswitchPad(12));
+}
+
+test "Kit display names" {
+    try testing.expectEqualStrings("PAD 1", Kit.getPadDisplayName(0));
+    try testing.expectEqualStrings("PAD 9", Kit.getPadDisplayName(8));
+    try testing.expectEqualStrings("TRIG 1", Kit.getPadDisplayName(9));
+    try testing.expectEqualStrings("TRIG 4", Kit.getPadDisplayName(12));
+    try testing.expectEqualStrings("FS 1", Kit.getPadDisplayName(13));
+    try testing.expectEqualStrings("FS 2", Kit.getPadDisplayName(14));
+    try testing.expectEqualStrings("?", Kit.getPadDisplayName(15));
+}
+
+test "Project kit management" {
+    var project = Project.init();
+    try testing.expectEqual(@as(u8, 1), project.kit_count);
+
+    try testing.expect(project.addKit());
+    try testing.expectEqual(@as(u8, 2), project.kit_count);
+
+    try testing.expect(project.duplicateKit(0));
+    try testing.expectEqual(@as(u8, 3), project.kit_count);
+
+    try testing.expect(project.deleteKit(2));
+    try testing.expectEqual(@as(u8, 2), project.kit_count);
+
+    // Can't delete the last kit
+    try testing.expect(project.deleteKit(1));
+    try testing.expect(!project.deleteKit(0));
+    try testing.expectEqual(@as(u8, 1), project.kit_count);
+}
+
+test "SampleLibrary operations" {
+    var library = SampleLibrary.init();
+    try testing.expectEqual(@as(u16, 0), library.count);
+
+    try testing.expect(library.addSample("Kick", "/samples/kick.wav"));
+    try testing.expectEqual(@as(u16, 1), library.count);
+
+    // addOrFind should return existing
+    const idx1 = library.addOrFind("Snare", "/samples/snare.wav");
+    try testing.expect(idx1 != null);
+    try testing.expectEqual(@as(u16, 2), library.count);
+
+    const idx2 = library.addOrFind("Snare Dup", "/samples/snare.wav");
+    try testing.expect(idx2 != null);
+    try testing.expectEqual(idx1.?, idx2.?); // Same path, same index
+    try testing.expectEqual(@as(u16, 2), library.count); // Count unchanged
+
+    // Find by path
+    try testing.expect(library.findByPath("/samples/kick.wav") != null);
+    try testing.expect(library.findByPath("/samples/nonexistent.wav") == null);
+}
+
+test "KitChain operations" {
+    var chain = KitChain.init();
+    try testing.expectEqual(@as(u8, 0), chain.step_count);
+
+    try testing.expect(chain.addStep(0));
+    try testing.expect(chain.addStep(1));
+    try testing.expect(chain.addStep(2));
+    try testing.expectEqual(@as(u8, 3), chain.step_count);
+
+    try testing.expectEqual(@as(u8, 0), chain.getStep(0).?);
+    try testing.expectEqual(@as(u8, 2), chain.getStep(2).?);
+    try testing.expect(chain.getStep(3) == null);
+
+    // Move step
+    try testing.expect(chain.moveStepDown(0));
+    try testing.expectEqual(@as(u8, 1), chain.getStep(0).?);
+    try testing.expectEqual(@as(u8, 0), chain.getStep(1).?);
+
+    // Remove step
+    try testing.expect(chain.removeStep(1));
+    try testing.expectEqual(@as(u8, 2), chain.step_count);
+
+    chain.clear();
+    try testing.expectEqual(@as(u8, 0), chain.step_count);
+}

@@ -93,7 +93,6 @@ pub const KitStorage = struct {
 
         if (shift == 0) return;
 
-        // Simple rotation using reversal algorithm
         const slice = self.kits.items[start..end];
         std.mem.reverse(Kit, slice[0 .. len - shift]);
         std.mem.reverse(Kit, slice[len - shift .. len]);
@@ -175,7 +174,6 @@ pub const WaveStorage = struct {
     }
 };
 
-/// Storage for tags
 pub const TagStorage = struct {
     tags: std.ArrayListUnmanaged(TagListEntry),
     allocator: Allocator,
@@ -233,7 +231,6 @@ pub const TagStorage = struct {
     }
 };
 
-/// Storage for kit chains
 pub const KitChainStorage = struct {
     chains: std.ArrayListUnmanaged(KitChain),
     allocator: Allocator,
