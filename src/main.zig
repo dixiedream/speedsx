@@ -456,52 +456,9 @@ fn tryOpenProject(app: *App) void {
                 },
             }
         }
-    } else {
-        // Try legacy project.spdx file first
-        var full_path: [512]u8 = undefined;
-        const project_file = std.fmt.bufPrint(&full_path, "{s}/project.spdx", .{path}) catch {
-            app.editor_ui.setStartupError("Path too long");
-            return;
-        };
-
-        // Try to load the project
-        if (file_io.loadProject(project_file)) |loaded_project| {
-            app.project = loaded_project;
-            app.project.setFilePath(path);
-            app.editor_ui.enterEditor();
-            user_config.saveLastPath(path); // Remember this path for next startup
-        } else |err| {
-            // If file doesn't exist, check if the directory exists
-            switch (err) {
-                file_io.FileError.FileNotFound => {
-                    // Check if directory exists - if so, start with empty project at that path
-                    if (std.fs.cwd().openDir(path, .{})) |dir| {
-                        var d = dir;
-                        d.close();
-                        // Directory exists, start with new project at this path
-                        app.project = models.Project.init();
-                        app.project.setFilePath(path);
-                        app.editor_ui.enterEditor();
-                        user_config.saveLastPath(path); // Remember this path for next startup
-                    } else |_| {
-                        app.editor_ui.setStartupError("Directory not found");
-                    }
-                },
-                file_io.FileError.InvalidMagic => {
-                    app.editor_ui.setStartupError("Invalid project file format");
-                },
-                file_io.FileError.UnsupportedVersion => {
-                    app.editor_ui.setStartupError("Unsupported project version");
-                },
-                file_io.FileError.AccessDenied => {
-                    app.editor_ui.setStartupError("Access denied - check permissions");
-                },
-                else => {
-                    app.editor_ui.setStartupError("Error loading project");
-                },
-            }
-        }
     }
+
+    app.editor_ui.setStartupError("Directory not found");
 }
 
 fn startNewProject(app: *App) void {
@@ -523,23 +480,14 @@ fn saveProject(app: *App) void {
         // Save to SPD-SX format at the specified path (creating structure if needed)
         spdsx_io.createSpdSxStructure(path) catch {};
         spdsx_io.saveConfiguration(app.allocator, &app.project, path) catch {
-            // Fall back to legacy format
-            file_io.saveProject(&app.project, "project.spdx") catch {
-                app.editor_ui.showError("Failed to save project");
-                return;
-            };
-            app.editor_ui.showSuccess("Project saved (legacy format)");
-            return;
-        };
-        app.editor_ui.showSuccess("Project saved");
-    } else {
-        // No path set, use legacy format
-        file_io.saveProject(&app.project, "project.spdx") catch {
             app.editor_ui.showError("Failed to save project");
             return;
         };
-        app.editor_ui.showSuccess("Project saved to project.spdx");
+        app.editor_ui.showSuccess("Project saved");
     }
+
+    app.editor_ui.showError("Failed to save project");
+    return;
 }
 
 fn loadProject(app: *App) void {
@@ -553,15 +501,9 @@ fn loadProject(app: *App) void {
         } else |_| {
             app.editor_ui.showError("Failed to reload SPD-SX configuration");
         }
-    } else {
-        // Fall back to legacy format
-        if (file_io.loadProject("project.spdx")) |loaded| {
-            app.project = loaded;
-            app.editor_ui.showSuccess("Project loaded");
-        } else |_| {
-            app.editor_ui.showError("Failed to load project");
-        }
     }
+
+    app.editor_ui.showError("Failed to load project");
 }
 
 /// Scan a directory for audio files and populate the sample browser

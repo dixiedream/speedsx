@@ -1,7 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-/// Allowed symbols for names (based on Java Symbols array)
 pub const allowed_symbols = " '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_=@!#$%&()+,-.[]^`{}~";
 
 /// Check if a character is allowed in names

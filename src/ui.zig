@@ -53,11 +53,6 @@ const drawScrollbar = widgets.drawScrollbar;
 const drawTextBox = widgets.drawTextBox;
 const drawGreenButton = widgets.drawGreenButton;
 
-// ============================================================================
-// Drawing Functions (kept in main ui.zig for now)
-// These could be further split into pads.zig, panels.zig, modals.zig, etc.
-// ============================================================================
-
 /// Draw a single pad with drag and drop support
 pub fn drawPad(r: *Renderer, ui: *EditorUI, x: i32, y: i32, size: i32, pad: *const models.Pad, index: u8) bool {
     const modal_blocking = ui.isModalOpen();
@@ -318,7 +313,7 @@ pub fn drawStatusBar(r: *Renderer, y: i32, width: i32, project: *models.Project,
 /// Draw Kit Settings panel (scrollable)
 pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_height: i32, kit: *models.Kit, pad: *models.Pad) void {
     const panel_w: i32 = 200;
-    const content_height: i32 = 1350; // Total height of all content (increased for new sections)
+    const content_height: i32 = 1350;
 
     // Store bounds for scroll detection
     ui.scroll.left_panel_bounds = .{ .x = x - 5, .y = y, .w = panel_w + 10, .h = panel_height };
