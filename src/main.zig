@@ -476,7 +476,10 @@ fn saveProject(app: *App) void {
             return;
         };
         app.editor_ui.showSuccess("Project saved");
-    } else if (path.len > 0) {
+        return;
+    }
+
+    if (path.len > 0) {
         // Save to SPD-SX format at the specified path (creating structure if needed)
         spdsx_io.createSpdSxStructure(path) catch {};
         spdsx_io.saveConfiguration(app.allocator, &app.project, path) catch {
@@ -484,26 +487,32 @@ fn saveProject(app: *App) void {
             return;
         };
         app.editor_ui.showSuccess("Project saved");
+        return;
     }
 
-    app.editor_ui.showError("Failed to save project");
-    return;
+    app.editor_ui.showError("No project path set");
 }
 
 fn loadProject(app: *App) void {
     const path = app.project.getFilePath();
 
+    if (path.len == 0) {
+        app.editor_ui.showError("No project path set");
+        return;
+    }
+
     // If we have a valid SPD-SX path, load from that
-    if (path.len > 0 and spdsx_io.isValidSpdSxPath(path)) {
+    if (spdsx_io.isValidSpdSxPath(path)) {
         if (spdsx_io.loadConfiguration(app.allocator, path)) |result| {
             app.project = result.project;
             app.editor_ui.showSuccess("Project reloaded");
         } else |_| {
             app.editor_ui.showError("Failed to reload SPD-SX configuration");
         }
+        return;
     }
 
-    app.editor_ui.showError("Failed to load project");
+    app.editor_ui.showError("Invalid SPD-SX path");
 }
 
 /// Scan a directory for audio files and populate the sample browser
