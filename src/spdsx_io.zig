@@ -671,6 +671,32 @@ fn convertUiPadToCliPad(ui_pad: *const models.Pad, library: *const models.Sample
     return cli_pad;
 }
 
+/// Delete a wave's physical files (both the WAV file and the .spd parameter file)
+/// wave_index: the index in the sample library
+/// sample_path: the path to the WAV file
+/// base_path: the SPD-SX configuration base path
+pub fn deleteWaveFiles(base_path: []const u8, wave_index: u16, sample_path: []const u8) void {
+    var path_buf: [512]u8 = undefined;
+
+    // Delete the actual WAV file if it exists and is within the SPD-SX directory
+    if (sample_path.len > 0) {
+        // Only delete if the file is within the SPD-SX WAVE/DATA directory
+        // to avoid accidentally deleting files from other locations
+        if (std.mem.indexOf(u8, sample_path, "SPD-SX/WAVE/DATA") != null) {
+            std.fs.cwd().deleteFile(sample_path) catch {};
+        }
+    }
+
+    // Delete the .spd parameter file
+    // Note: This deletes by the current index. After deletion, remaining waves
+    // will be renumbered on save, and deleteExtraWaveFiles will clean up orphaned files.
+    const folder = wave_index / 100;
+    const file = wave_index % 100;
+
+    const prm_path = std.fmt.bufPrint(&path_buf, "{s}/SPD-SX/WAVE/PRM/{d:0>2}/{d:0>2}.spd", .{ base_path, folder, file }) catch return;
+    std.fs.cwd().deleteFile(prm_path) catch {};
+}
+
 /// Check if the path looks like a valid SPD-SX configuration path
 pub fn isValidSpdSxPath(path: []const u8) bool {
     var buf: [512]u8 = undefined;

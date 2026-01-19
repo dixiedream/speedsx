@@ -226,13 +226,10 @@ pub fn drawActionButtons(r: *Renderer, ui: *EditorUI, x: i32, y: i32, project: *
     }
     btn_x += btn_w + gap;
 
-    // Delete the selected wave from the sample library
+    // Delete the selected wave from the sample library (handled by main.zig for file deletion)
     if (drawButton(r, ui, btn_x, btn_y, btn_w, btn_h, "Delete wav", !modal_blocking and project.sample_library.count > 0)) {
-        _ = project.sample_library.removeSample(ui.selected_wave);
-        // Adjust selected wave if it's now out of bounds
-        if (ui.selected_wave >= project.sample_library.count and project.sample_library.count > 0) {
-            ui.selected_wave = project.sample_library.count - 1;
-        }
+        result.delete_wave = true;
+        result.wave_to_delete = ui.selected_wave;
     }
     btn_x += btn_w + gap;
 
@@ -1135,9 +1132,11 @@ pub fn drawPadContextMenu(r: *Renderer, ui: *EditorUI, kit: *models.Kit) bool {
     return menu_clicked;
 }
 
-/// Draw context menu for waves - returns true if "Edit Wave" was clicked
-pub fn drawWaveContextMenu(r: *Renderer, ui: *EditorUI, project: *models.Project) bool {
-    if (!ui.context_menu.open or ui.context_menu.menu_type != .wave) return false;
+/// Draw context menu for waves - returns actions to perform
+pub fn drawWaveContextMenu(r: *Renderer, ui: *EditorUI, project: *const models.Project) types.WaveContextMenuAction {
+    var action = types.WaveContextMenuAction{};
+
+    if (!ui.context_menu.open or ui.context_menu.menu_type != .wave) return action;
 
     const menu_w: i32 = 100;
     const item_h: i32 = 22;
@@ -1152,7 +1151,6 @@ pub fn drawWaveContextMenu(r: *Renderer, ui: *EditorUI, project: *models.Project
     r.drawRect(x, y, menu_w, menu_h, Colors.accent);
 
     var item_y = y + 1;
-    var open_editor = false;
     const wave_index = ui.context_menu.wave;
     const has_wave = wave_index < project.sample_library.count;
 
@@ -1165,7 +1163,7 @@ pub fn drawWaveContextMenu(r: *Renderer, ui: *EditorUI, project: *models.Project
     r.drawTextSmall("Edit Wave", x + 8, item_y + 6, edit_color);
     if (edit_hovered and ui.input.mouse_clicked) {
         ui.closeContextMenu();
-        open_editor = true;
+        action.open_editor = true;
     }
     item_y += item_h;
 
@@ -1177,10 +1175,8 @@ pub fn drawWaveContextMenu(r: *Renderer, ui: *EditorUI, project: *models.Project
     const delete_color = if (has_wave) 0xFFE04040 else Colors.text_dim;
     r.drawTextSmall("Delete", x + 8, item_y + 6, delete_color);
     if (delete_hovered and ui.input.mouse_clicked) {
-        _ = project.sample_library.removeSample(wave_index);
-        if (ui.selected_wave >= project.sample_library.count and project.sample_library.count > 0) {
-            ui.selected_wave = project.sample_library.count - 1;
-        }
+        action.delete_wave = true;
+        action.wave_to_delete = wave_index;
         ui.closeContextMenu();
     }
     item_y += item_h;
@@ -1202,7 +1198,7 @@ pub fn drawWaveContextMenu(r: *Renderer, ui: *EditorUI, project: *models.Project
         ui.closeContextMenu();
     }
 
-    return open_editor;
+    return action;
 }
 
 /// Draw drag indicator

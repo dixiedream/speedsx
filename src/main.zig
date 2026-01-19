@@ -628,6 +628,31 @@ fn playCurrentPadSample(app: *App) void {
     playPadSample(app, app.editor_ui.selected_pad);
 }
 
+/// Delete a wave from the sample library and its physical files
+fn deleteWave(app: *App, wave_index: u16) void {
+    if (wave_index >= app.project.sample_library.count) return;
+
+    // Get the sample path before removing
+    const sample = &app.project.sample_library.samples[wave_index];
+    const sample_path = sample.getPath();
+    const base_path = app.project.getFilePath();
+
+    // Delete physical files (WAV and .spd parameter file)
+    if (base_path.len > 0) {
+        spdsx_io.deleteWaveFiles(base_path, wave_index, sample_path);
+    }
+
+    // Remove from the in-memory sample library
+    _ = app.project.sample_library.removeSample(wave_index);
+
+    // Adjust selected wave if it's now out of bounds
+    if (app.editor_ui.selected_wave >= app.project.sample_library.count and app.project.sample_library.count > 0) {
+        app.editor_ui.selected_wave = app.project.sample_library.count - 1;
+    }
+
+    app.editor_ui.showSuccess("Wave deleted");
+}
+
 fn update(app: *App, delta: f32) void {
     app.editor_ui.update(delta);
 
@@ -709,6 +734,9 @@ fn draw(app: *App, width: c_int, height: c_int) void {
     if (action_result.stop_sample) {
         app.audio_player.stop();
     }
+    if (action_result.delete_wave) {
+        deleteWave(app, action_result.wave_to_delete);
+    }
 
     // File bar at bottom (with Open/Save)
     const file_bar_y = height - L.file_bar_height;
@@ -789,8 +817,9 @@ fn draw(app: *App, width: c_int, height: c_int) void {
     // Draw context menus (on top of most elements)
     _ = ui.drawPadContextMenu(r, &app.editor_ui, app.project.currentKit());
 
-    // Wave context menu - returns true if "Edit Wave" was clicked
-    if (ui.drawWaveContextMenu(r, &app.editor_ui, &app.project)) {
+    // Wave context menu
+    const wave_menu_action = ui.drawWaveContextMenu(r, &app.editor_ui, &app.project);
+    if (wave_menu_action.open_editor) {
         const wave_idx = app.editor_ui.context_menu.wave;
         if (wave_idx < app.project.sample_library.count) {
             const sample = &app.project.sample_library.samples[wave_idx];
@@ -814,6 +843,9 @@ fn draw(app: *App, width: c_int, height: c_int) void {
                 }
             }
         }
+    }
+    if (wave_menu_action.delete_wave) {
+        deleteWave(app, wave_menu_action.wave_to_delete);
     }
 
     // Draw drag indicator last (on top of everything)

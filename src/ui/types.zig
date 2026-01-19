@@ -289,6 +289,8 @@ pub const ActionButtonsResult = struct {
     play_sample: bool = false,
     stop_sample: bool = false,
     import_sample: bool = false,
+    delete_wave: bool = false,
+    wave_to_delete: u16 = 0,
 };
 
 pub const FileBarAction = struct {
@@ -390,4 +392,11 @@ pub const WaveEditorAction = struct {
     close: bool = false,
     save: bool = false, // Apply changes to the sample
     play_preview: bool = false, // Play the sample with current start/end
+};
+
+/// Wave context menu action result
+pub const WaveContextMenuAction = struct {
+    open_editor: bool = false,
+    delete_wave: bool = false,
+    wave_to_delete: u16 = 0,
 };
