@@ -1051,19 +1051,6 @@ pub fn drawKitChainEditor(r: *Renderer, ui: *EditorUI, center_x: i32, center_y: 
     return action;
 }
 
-fn drawChainNameBox(r: *Renderer, ui: *const EditorUI, x: i32, y: i32, w: i32, h: i32, chain: *models.KitChain) void {
-    const hovered = ui.isHovered(x, y, w, h);
-    const bg_color = if (hovered) Colors.panel_light else Colors.slider_bg;
-
-    r.drawRoundedRect(x, y, w, h, bg_color, true);
-    r.drawRoundedRect(x, y, w, h, Colors.border, false);
-
-    const name = chain.getName();
-    const display_len = @min(name.len, 20);
-    const display_text = if (name.len > 0) name[0..display_len] else "Unnamed";
-    r.drawTextSmall(display_text, x + 4, y + @divFloor(h - 6, 2), Colors.text);
-}
-
 /// Draw context menu for pads
 pub fn drawPadContextMenu(r: *Renderer, ui: *EditorUI, kit: *models.Kit) bool {
     if (!ui.context_menu.open or ui.context_menu.menu_type != .pad) return false;

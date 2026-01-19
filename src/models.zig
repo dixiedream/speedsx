@@ -885,33 +885,6 @@ pub const FxParams = struct {
     }
 };
 
-/// Effect types available (legacy, kept for compatibility)
-pub const EffectType = enum(u8) {
-    none = 0,
-    reverb = 1,
-    delay = 2,
-    chorus = 3,
-    flanger = 4,
-    distortion = 5,
-    compressor = 6,
-    eq = 7,
-    filter = 8,
-
-    pub fn toString(self: EffectType) []const u8 {
-        return switch (self) {
-            .none => "None",
-            .reverb => "Reverb",
-            .delay => "Delay",
-            .chorus => "Chorus",
-            .flanger => "Flanger",
-            .distortion => "Distortion",
-            .compressor => "Compressor",
-            .eq => "EQ",
-            .filter => "Filter",
-        };
-    }
-};
-
 /// MIDI configuration
 pub const MidiConfig = struct {
     input_channel: u8 = 0, // 0-15 (0 = omni)

@@ -48,7 +48,6 @@ pub const EditorUI = struct {
 
     // Pad animation
     pad_flash: [15]f32 = [_]f32{0} ** 15,
-    is_playing: bool = false,
 
     // Composed state components
     input: InputState = .{},
@@ -59,14 +58,6 @@ pub const EditorUI = struct {
     clipboard: ClipboardState = .{},
     sample_browser: SampleBrowserState = .{},
     wave_editor: WaveEditorState = .{},
-
-    pub fn getMouseX(self: *const EditorUI) i32 {
-        return self.input.mouse_x;
-    }
-
-    pub fn getMouseY(self: *const EditorUI) i32 {
-        return self.input.mouse_y;
-    }
 
     pub fn init() EditorUI {
         return EditorUI{};
@@ -103,14 +94,6 @@ pub const EditorUI = struct {
 
     pub fn isClicked(self: *const EditorUI, x: i32, y: i32, w: i32, h: i32) bool {
         return self.input.mouse_clicked and self.isHovered(x, y, w, h);
-    }
-
-    pub fn togglePlay(self: *EditorUI) void {
-        self.is_playing = !self.is_playing;
-    }
-
-    pub fn stop(self: *EditorUI) void {
-        self.is_playing = false;
     }
 
     /// Start editing a text field

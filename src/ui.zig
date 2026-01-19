@@ -48,10 +48,8 @@ pub const drawToggle = widgets.drawToggle;
 pub const lerpColor = widgets.lerpColor;
 pub const lightenColor = widgets.lightenColor;
 
-// Private widget helpers
-const drawScrollbar = widgets.drawScrollbar;
+// Private widget helpers used in this file
 const drawTextBox = widgets.drawTextBox;
-const drawGreenButton = widgets.drawGreenButton;
 
 /// Draw a single pad with drag and drop support
 pub fn drawPad(r: *Renderer, ui: *EditorUI, x: i32, y: i32, size: i32, pad: *const models.Pad, index: u8) bool {
