@@ -665,12 +665,12 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     content_y += 38;
 
     // FX2 Assign
-    draw_y = y + content_y - scroll_offset;
-    if (isVisible(draw_y, 30, y, panel_height)) {
-        if (drawDropdown(r, ui, x, draw_y + 10, 80, 18, kit.fx2_assign.toString(), "FX2 Assign")) {
-            kit.fx2_assign = @enumFromInt((@intFromEnum(kit.fx2_assign) + 1) % 16);
-        }
-    }
+    // draw_y = y + content_y - scroll_offset;
+    // if (isVisible(draw_y, 30, y, panel_height)) {
+    //     if (drawDropdown(r, ui, x, draw_y + 10, 80, 18, kit.fx2_assign.toString(), "FX2 Assign")) {
+    //         kit.fx2_assign = @enumFromInt((@intFromEnum(kit.fx2_assign) + 1) % 16);
+    //     }
+    // }
     // content_y tracking ends here - used for scroll bounds calculation
 }
 

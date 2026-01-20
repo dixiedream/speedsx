@@ -805,29 +805,6 @@ pub const FxType = enum(u8) {
     }
 };
 
-/// FX2 effect types (matches SPD-SX FX2 types)
-// pub const Fx2Type = enum(u8) {
-//     thru = 0,
-//     hall = 1,
-//     room = 2,
-//     plate = 3,
-//     delay = 4,
-//     pan_delay = 5,
-//     tape_echo = 6,
-//
-//     pub fn toString(self: Fx2Type) []const u8 {
-//         return switch (self) {
-//             .thru => "THRU",
-//             .hall => "HALL",
-//             .room => "ROOM",
-//             .plate => "PLATE",
-//             .delay => "DELAY",
-//             .pan_delay => "PAN DELAY",
-//             .tape_echo => "TAPE ECHO",
-//         };
-//     }
-// };
-
 /// FX2 assignment (which pads send to FX2)
 pub const Fx2Assign = enum(u8) {
     all = 0,
