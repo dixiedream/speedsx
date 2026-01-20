@@ -30,6 +30,7 @@ pub const LoadResult = struct {
     kit_count: usize,
     wave_count: usize,
     chain_count: usize,
+    tag_count: usize,
     error_message: ?[]const u8,
 };
 
@@ -70,6 +71,7 @@ pub fn loadConfiguration(allocator: Allocator, base_path: []const u8) SpdSxError
         .kit_count = 0,
         .wave_count = 0,
         .chain_count = 0,
+        .tag_count = 0,
         .error_message = null,
     };
 
@@ -104,6 +106,8 @@ pub fn loadConfiguration(allocator: Allocator, base_path: []const u8) SpdSxError
 
     // Load kit chains
     result.chain_count = loadKitChains(allocator, actual_path, &result.project.kit_chain_library) catch 0;
+
+    result.tag_count = loadTagList(allocator, actual_path, &result.project.tag_library) catch 0;
 
     // Set file path
     result.project.setFilePath(base_path);
@@ -203,6 +207,41 @@ fn loadKits(allocator: Allocator, base_path: []const u8, project: *models.Projec
     return kit_count;
 }
 
+fn loadTagList(allocator: Allocator, base_path: []const u8, library: *models.TagLibrary) !usize {
+    var path_buf: [512]u8 = undefined;
+
+    const tag_path = std.fmt.bufPrint(&path_buf, "{s}/SPD-SX/SYSTEM/tag_list.spd", .{base_path}) catch {
+        return 0;
+    };
+
+    if (!pathExists(tag_path)) {
+        return 0;
+    }
+
+    var cli_tags = cli_xml.parseTagListFile(allocator, tag_path) catch {
+        return 0;
+    };
+    defer cli_tags.deinit(allocator);
+
+    library.* = models.TagLibrary.init();
+
+    var count: usize = 0;
+    for (cli_tags.items) |*cli_tag| {
+        if (library.count >= models.TagLibrary.MAX_TAGS) break;
+
+        const ui_tag = &library.tags[library.count];
+        convertCliTagToUiTag(allocator, cli_tag, ui_tag);
+
+        // Only count tags that have a name
+        if (ui_tag.name.len > 0) {
+            library.count += 1;
+            count += 1;
+        }
+    }
+
+    return count;
+}
+
 /// Load kit chains from SPD-SX SYSTEM directory (sysparam.spd)
 fn loadKitChains(allocator: Allocator, base_path: []const u8, library: *models.KitChainLibrary) !usize {
     var path_buf: [512]u8 = undefined;
@@ -241,6 +280,16 @@ fn loadKitChains(allocator: Allocator, base_path: []const u8, library: *models.K
     return count;
 }
 
+fn convertCliTagToUiTag(allocator: Allocator, cli_tag: *const cli_types.TagListEntry, ui_tag: *models.TagEntry) void {
+    ui_tag.* = models.TagEntry.init();
+
+    const name = cli_tag.getName(allocator) catch "";
+    defer if (name.len > 0) allocator.free(name);
+    ui_tag.setName(name);
+
+    ui_tag.order = cli_tag.order;
+}
+
 /// Convert a CLI KitChain to a UI KitChain
 fn convertCliChainToUiChain(allocator: Allocator, cli_chain: *const cli_types.KitChain, ui_chain: *models.KitChain) void {
     ui_chain.* = models.KitChain.init();
@@ -271,6 +320,13 @@ fn convertCliChainToUiChain(allocator: Allocator, cli_chain: *const cli_types.Ki
         }
     }
     ui_chain.step_count = actual_count;
+}
+
+fn convertUiTagToCliTag(ui_tag: *const models.TagEntry) cli_types.TagListEntry {
+    var cli_tag = cli_types.TagListEntry.init();
+    cli_encoding.encodeString(ui_tag.getName(), &cli_tag.nm);
+    cli_tag.order = ui_tag.order;
+    return cli_tag;
 }
 
 /// Convert a UI KitChain to a CLI KitChain
@@ -471,6 +527,13 @@ pub fn saveConfiguration(allocator: Allocator, project: *const models.Project, b
         const ui_chain = &project.kit_chain_library.chains[c];
         const cli_chain = convertUiChainToCliChain(ui_chain);
         data_store.kit_chains.insert(cli_chain) catch continue;
+    }
+
+    var t: u8 = 0;
+    while (t < project.tag_library.count) : (t += 1) {
+        const ui_tag = &project.tag_library.tags[c];
+        const cli_tag = convertUiTagToCliTag(ui_tag);
+        data_store.tags.insert(cli_tag) catch continue;
     }
 
     // Export using CLI xml_writer

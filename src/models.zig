@@ -684,7 +684,7 @@ pub const SampleLibrary = struct {
 
 /// Tag entry for categorizing samples
 pub const TagEntry = struct {
-    name: BoundedString(16) = .{},
+    name: BoundedString(12) = .{},
     order: u8 = 0,
 
     pub fn init() TagEntry {
@@ -705,32 +705,11 @@ pub const TagLibrary = struct {
     tags: [MAX_TAGS]TagEntry = undefined,
     count: u8 = 0,
 
-    pub const MAX_TAGS = 12;
-
-    // Default SPD-SX tags
-    const DEFAULT_TAGS = [_][]const u8{
-        "KICK",
-        "SNARE",
-        "HI-HAT",
-        "CYMBAL",
-        "TOM",
-        "PERCUSSION",
-        "PHRASE",
-        "FX",
-        "LOOP",
-        "OTHERS",
-        "USER1",
-        "USER2",
-    };
+    // pub const MAX_TAGS = 12;
+    pub const MAX_TAGS = 30;
 
     pub fn init() TagLibrary {
         var lib = TagLibrary{};
-        // Initialize with default tags
-        for (DEFAULT_TAGS, 0..) |tag_name, i| {
-            lib.tags[i] = TagEntry.init();
-            lib.tags[i].setName(tag_name);
-            lib.tags[i].order = @intCast(i);
-        }
         lib.count = MAX_TAGS;
         return lib;
     }
