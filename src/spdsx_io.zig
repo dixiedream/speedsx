@@ -320,14 +320,14 @@ fn convertCliKitToUiKit(allocator: Allocator, cli_kit: *const cli_types.Kit, ui_
 
     // Convert FX1 settings
     ui_kit.fx1_switch = cli_kit.fx1_sw != 0;
-    ui_kit.fx1_type = @enumFromInt(@min(cli_kit.fx1_type, 19));
+    ui_kit.fx1_type = @enumFromInt(@min(cli_kit.fx1_type, 20));
     for (cli_kit.fx1_prm, 0..) |prm, idx| {
         ui_kit.fx1_params.params[idx] = prm;
     }
 
     // Convert FX2 settings
     ui_kit.fx2_switch = cli_kit.fx2_sw != 0;
-    ui_kit.fx2_type = @enumFromInt(@min(cli_kit.fx2_type, 6));
+    ui_kit.fx2_type = @enumFromInt(@min(cli_kit.fx2_type, 20));
     for (cli_kit.fx2_prm, 0..) |prm, idx| {
         ui_kit.fx2_params.params[idx] = prm;
     }

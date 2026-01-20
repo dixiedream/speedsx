@@ -400,12 +400,12 @@ pub const Kit = struct {
 
     // FX1 settings
     fx1_switch: bool = true,
-    fx1_type: Fx1Type = .thru,
+    fx1_type: FxType = .thru,
     fx1_params: FxParams = FxParams.init(),
 
     // FX2 settings
     fx2_switch: bool = true,
-    fx2_type: Fx2Type = .thru,
+    fx2_type: FxType = .thru,
     fx2_params: FxParams = FxParams.init(),
     fx2_assign: Fx2Assign = .all,
 
@@ -754,77 +754,79 @@ pub const TagLibrary = struct {
     }
 };
 
-/// FX1 effect types (matches SPD-SX FX1 types)
-pub const Fx1Type = enum(u8) {
+/// FX effect types (matches SPD-SX FX types)
+pub const FxType = enum(u8) {
     thru = 0,
-    equalizer = 1,
-    isolator = 2,
-    low_boost = 3,
-    super_filter = 4,
-    step_filter = 5,
-    compressor = 6,
-    limiter = 7,
-    overdrive = 8,
-    distortion = 9,
-    bit_crasher = 10,
-    tremolo = 11,
-    phaser = 12,
-    flanger = 13,
-    chorus = 14,
-    delay = 15,
-    tape_echo = 16,
-    reverb = 17,
-    ring_mod = 18,
-    slicer = 19,
+    stereo_delay = 1,
+    sync_delay = 2,
+    tape_echo = 3,
+    chorus = 4,
+    flanger = 5,
+    step_flanger = 6,
+    phaser = 7,
+    step_phaser = 8,
+    equalizer = 9,
+    compressor = 10,
+    filter = 11,
+    filt_drive = 12,
+    isolator = 13,
+    touch_wah = 14,
+    distortion = 15,
+    ringmod = 16,
+    pitch_shift = 17,
+    vibrato = 18,
+    reverb = 19,
+    slicer = 20,
 
-    pub fn toString(self: Fx1Type) []const u8 {
+    pub fn toString(self: FxType) []const u8 {
         return switch (self) {
             .thru => "THRU",
-            .equalizer => "EQUALIZER",
-            .isolator => "ISOLATOR",
-            .low_boost => "LOW BOOST",
-            .super_filter => "SUPER FILTER",
-            .step_filter => "STEP FILTER",
-            .compressor => "COMPRESSOR",
-            .limiter => "LIMITER",
-            .overdrive => "OVERDRIVE",
-            .distortion => "DISTORTION",
-            .bit_crasher => "BIT CRASHER",
-            .tremolo => "TREMOLO",
-            .phaser => "PHASER",
-            .flanger => "FLANGER",
-            .chorus => "CHORUS",
-            .delay => "DELAY",
+            .stereo_delay => "STEREO DLY",
+            .sync_delay => "SYNC DELAY",
             .tape_echo => "TAPE ECHO",
+            .chorus => "CHORUS",
+            .flanger => "FLANGER",
+            .step_flanger => "STEP FLNGR",
+            .phaser => "PHASER",
+            .step_phaser => "STEP PHASR",
+            .equalizer => "EQ",
+            .compressor => "COMPRESSOR",
+            .filter => "FILTER",
+            .filt_drive => "FILT+DRIVE",
+            .isolator => "ISOLATOR",
+            .touch_wah => "TOUCH WAH",
+            .distortion => "DISTORTION",
+            .ringmod => "RINGMOD",
+            .pitch_shift => "PITCHSHIFT",
+            .vibrato => "VIBRATO",
             .reverb => "REVERB",
-            .ring_mod => "RING MOD",
             .slicer => "SLICER",
         };
     }
 };
 
 /// FX2 effect types (matches SPD-SX FX2 types)
-pub const Fx2Type = enum(u8) {
-    thru = 0,
-    hall = 1,
-    room = 2,
-    plate = 3,
-    delay = 4,
-    pan_delay = 5,
-    tape_echo = 6,
-
-    pub fn toString(self: Fx2Type) []const u8 {
-        return switch (self) {
-            .thru => "THRU",
-            .hall => "HALL",
-            .room => "ROOM",
-            .plate => "PLATE",
-            .delay => "DELAY",
-            .pan_delay => "PAN DELAY",
-            .tape_echo => "TAPE ECHO",
-        };
-    }
-};
+// pub const Fx2Type = enum(u8) {
+//     thru = 0,
+//     hall = 1,
+//     room = 2,
+//     plate = 3,
+//     delay = 4,
+//     pan_delay = 5,
+//     tape_echo = 6,
+//
+//     pub fn toString(self: Fx2Type) []const u8 {
+//         return switch (self) {
+//             .thru => "THRU",
+//             .hall => "HALL",
+//             .room => "ROOM",
+//             .plate => "PLATE",
+//             .delay => "DELAY",
+//             .pan_delay => "PAN DELAY",
+//             .tape_echo => "TAPE ECHO",
+//         };
+//     }
+// };
 
 /// FX2 assignment (which pads send to FX2)
 pub const Fx2Assign = enum(u8) {
