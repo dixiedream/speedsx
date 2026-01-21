@@ -294,7 +294,8 @@ pub const ActionButtonsResult = struct {
 };
 
 pub const FileBarAction = struct {
-    needs_open: bool = false,
+    needs_open: bool = false, // Open a different folder (go to startup)
+    needs_reload: bool = false, // Reload current configuration
     needs_save: bool = false,
 };
 

@@ -440,6 +440,12 @@ pub const EditorUI = struct {
         return self.app_state == .startup;
     }
 
+    /// Return to startup state (to select a different folder)
+    pub fn enterStartup(self: *EditorUI) void {
+        self.app_state = .startup;
+        self.clearStartupError();
+    }
+
     /// Check if any modal is blocking input
     pub fn isModalOpen(self: *const EditorUI) bool {
         return self.show_sample_browser or self.show_midi_config or self.show_settings or self.show_kit_chain or self.show_wave_editor or self.context_menu.open;

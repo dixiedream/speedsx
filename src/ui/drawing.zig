@@ -270,7 +270,8 @@ pub fn drawFileBar(r: *Renderer, ui: *EditorUI, x: i32, y: i32, width: i32, proj
     const path_display = if (path.len > 0) path else "/Volumes/SPD-SX_/Roland";
     r.drawTextSmall(path_display, x + 10, y + 10, Colors.text_dim);
 
-    const open_x = x + width - 140;
+    // Open button (select different folder)
+    const open_x = x + width - 210;
     if (ui.isHovered(open_x, y + 4, btn_w, 20)) {
         r.fillRect(open_x, y + 4, btn_w, 20, 0xFF3A8A3A);
     } else {
@@ -279,6 +280,12 @@ pub fn drawFileBar(r: *Renderer, ui: *EditorUI, x: i32, y: i32, width: i32, proj
     r.drawTextSmall("Open", open_x + 16, y + 10, Colors.text);
     if (ui.isClicked(open_x, y + 4, btn_w, 20)) {
         action.needs_open = true;
+    }
+
+    // Reload button (reload current configuration)
+    const reload_x = x + width - 140;
+    if (drawButton(r, ui, reload_x, y + 4, btn_w, 20, "Reload", true)) {
+        action.needs_reload = true;
     }
 
     const save_x = x + width - 70;
