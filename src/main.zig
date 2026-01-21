@@ -302,6 +302,7 @@ fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
                 // Paste to selected pad
                 const pad = app.project.currentKit().getPad(app.editor_ui.selected_pad);
                 app.editor_ui.pastePad(pad);
+                app.editor_ui.invalidateSampleUsageCache();
             }
         },
         c.SDLK_n => {
@@ -435,6 +436,7 @@ fn tryOpenProject(app: *App) void {
         // Load from real SPD-SX format
         if (spdsx_io.loadConfiguration(app.allocator, path)) |result| {
             app.project = result.project;
+            app.editor_ui.invalidateSampleUsageCache();
             app.editor_ui.enterEditor();
             user_config.saveLastPath(path); // Remember this path for next startup
         } else |err| {
@@ -505,6 +507,7 @@ fn loadProject(app: *App) void {
     if (spdsx_io.isValidSpdSxPath(path)) {
         if (spdsx_io.loadConfiguration(app.allocator, path)) |result| {
             app.project = result.project;
+            app.editor_ui.invalidateSampleUsageCache();
             app.editor_ui.showSuccess("Project reloaded");
         } else |_| {
             app.editor_ui.showError("Failed to reload SPD-SX configuration");
@@ -738,10 +741,14 @@ fn draw(app: *App, width: c_int, height: c_int) void {
         deleteWave(app, action_result.wave_to_delete);
     }
 
-    // File bar at bottom (with Open/Save)
+    // File bar at bottom (with Open/Reload/Save)
     const file_bar_y = height - L.file_bar_height;
     const file_action = ui.drawFileBar(r, &app.editor_ui, 0, file_bar_y, width, &app.project);
     if (file_action.needs_open) {
+        // Return to startup screen to select a different folder
+        app.editor_ui.enterStartup();
+    }
+    if (file_action.needs_reload) {
         loadProject(app);
     }
     if (file_action.needs_save) {
