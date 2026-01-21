@@ -31,6 +31,9 @@ pub fn drawWaveListPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, project: *
 
     ui.scroll.wave_list_bounds = .{ .x = x, .y = y, .w = panel_w, .h = panel_h };
 
+    // Update sample usage cache if dirty
+    ui.updateSampleUsageCache(project);
+
     r.drawRoundedRect(x, y, panel_w, panel_h, Colors.panel, true);
     r.drawRoundedRect(x, y, panel_w, panel_h, Colors.border, false);
 
@@ -64,7 +67,7 @@ pub fn drawWaveListPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, project: *
 
         const sample = &library.samples[i];
         const sample_name = sample.getName();
-        const is_used = isSampleUsed(project, i);
+        const is_used = ui.isSampleUsed(i);
         const is_selected = ui.selected_wave == i;
         const item_hovered = ui.isHovered(x + 4, item_y, panel_w - 12, item_h) and item_y >= list_top and item_y + item_h <= list_bottom;
 
@@ -97,34 +100,6 @@ pub fn drawWaveListPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, project: *
             ui.startDragWave(i, sample_name);
         }
     }
-}
-
-/// Check if sample is used
-fn isSampleUsed(project: *models.Project, sample_index: u16) bool {
-    const library = &project.sample_library;
-    if (sample_index >= library.count) return false;
-
-    const sample = &library.samples[sample_index];
-    const sample_path = sample.getPath();
-    if (sample_path.len == 0) return false;
-
-    var kit_idx: u8 = 0;
-    while (kit_idx < project.kit_count) : (kit_idx += 1) {
-        const kit = &project.kits[kit_idx];
-        for (&kit.pads) |*pad| {
-            if (pad.has_sample) {
-                if (std.mem.eql(u8, pad.sample.getPath(), sample_path)) {
-                    return true;
-                }
-            }
-            if (pad.has_sub_sample) {
-                if (std.mem.eql(u8, pad.sub_sample.getPath(), sample_path)) {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
 }
 
 /// Draw Kit list panel
@@ -1102,6 +1077,7 @@ pub fn drawPadContextMenu(r: *Renderer, ui: *EditorUI, kit: *models.Kit) bool {
     }
     if (paste_hovered and ui.input.mouse_clicked) {
         ui.pastePad(pad);
+        ui.invalidateSampleUsageCache();
         ui.closeContextMenu();
         menu_clicked = true;
     }
@@ -1114,6 +1090,7 @@ pub fn drawPadContextMenu(r: *Renderer, ui: *EditorUI, kit: *models.Kit) bool {
     r.drawTextSmall("Clear", x + 8, item_y + 6, Colors.text);
     if (clear_hovered and ui.input.mouse_clicked) {
         pad.reset();
+        ui.invalidateSampleUsageCache();
         ui.closeContextMenu();
         menu_clicked = true;
     }
@@ -1248,9 +1225,11 @@ pub fn applyDropFromLibrary(ui: *EditorUI, kit: *models.Kit, library: *models.Sa
     switch (ui.drag.drop_target) {
         .pad_main => {
             pad.loadSample(wave_name, wave_path);
+            ui.invalidateSampleUsageCache();
         },
         .pad_sub => {
             pad.loadSubSample(wave_name, wave_path);
+            ui.invalidateSampleUsageCache();
         },
         .none => {},
     }

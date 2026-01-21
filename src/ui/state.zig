@@ -59,6 +59,10 @@ pub const EditorUI = struct {
     sample_browser: SampleBrowserState = .{},
     wave_editor: WaveEditorState = .{},
 
+    // Sample usage cache (avoids recalculating every frame)
+    sample_usage_cache: [models.SampleLibrary.MAX_SAMPLES]bool = [_]bool{false} ** models.SampleLibrary.MAX_SAMPLES,
+    sample_usage_dirty: bool = true,
+
     pub fn init() EditorUI {
         return EditorUI{};
     }
@@ -532,5 +536,52 @@ pub const EditorUI = struct {
         sample.beat = self.wave_editor.beat;
         sample.measure = self.wave_editor.measure;
         sample.tag = self.wave_editor.tag;
+    }
+
+    /// Mark sample usage cache as dirty (call when pad samples change)
+    pub fn invalidateSampleUsageCache(self: *EditorUI) void {
+        self.sample_usage_dirty = true;
+    }
+
+    /// Update sample usage cache from project data
+    pub fn updateSampleUsageCache(self: *EditorUI, project: *models.Project) void {
+        if (!self.sample_usage_dirty) return;
+
+        const library = &project.sample_library;
+
+        // Clear cache
+        @memset(&self.sample_usage_cache, false);
+
+        // Mark all samples that are used by any pad
+        var kit_idx: u8 = 0;
+        while (kit_idx < project.kit_count) : (kit_idx += 1) {
+            const kit = &project.kits[kit_idx];
+            for (&kit.pads) |*pad| {
+                if (pad.has_sample) {
+                    const pad_path = pad.sample.getPath();
+                    if (pad_path.len > 0) {
+                        if (library.findByPath(pad_path)) |sample_idx| {
+                            self.sample_usage_cache[sample_idx] = true;
+                        }
+                    }
+                }
+                if (pad.has_sub_sample) {
+                    const sub_path = pad.sub_sample.getPath();
+                    if (sub_path.len > 0) {
+                        if (library.findByPath(sub_path)) |sample_idx| {
+                            self.sample_usage_cache[sample_idx] = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        self.sample_usage_dirty = false;
+    }
+
+    /// Check if a sample is used (uses cached value)
+    pub fn isSampleUsed(self: *const EditorUI, sample_index: u16) bool {
+        if (sample_index >= models.SampleLibrary.MAX_SAMPLES) return false;
+        return self.sample_usage_cache[sample_index];
     }
 };
