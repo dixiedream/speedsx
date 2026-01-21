@@ -223,7 +223,9 @@ fn loadTagList(allocator: Allocator, base_path: []const u8, library: *models.Tag
     };
     defer cli_tags.deinit(allocator);
 
+    // Reset library - TagLibrary.init() sets count to MAX_TAGS, so we need to reset it to 0
     library.* = models.TagLibrary.init();
+    library.count = 0;
 
     var count: usize = 0;
     for (cli_tags.items) |*cli_tag| {
@@ -531,7 +533,7 @@ pub fn saveConfiguration(allocator: Allocator, project: *const models.Project, b
 
     var t: u8 = 0;
     while (t < project.tag_library.count) : (t += 1) {
-        const ui_tag = &project.tag_library.tags[c];
+        const ui_tag = &project.tag_library.tags[t];
         const cli_tag = convertUiTagToCliTag(ui_tag);
         data_store.tags.insert(cli_tag) catch continue;
     }
