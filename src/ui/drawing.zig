@@ -55,7 +55,9 @@ pub fn drawWaveListPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, project: *
     }
 
     if (library.count == 0) {
-        r.drawTextSmall("No waves", x + 30, y + panel_h / 2 - 6, Colors.text_dim);
+        r.drawTextSmall("No waves", x + 30, y + panel_h / 2 - 12, Colors.text_dim);
+        r.drawTextSmall("Drop audio", x + 26, y + panel_h / 2 + 2, Colors.text_dim);
+        r.drawTextSmall("files here", x + 30, y + panel_h / 2 + 14, Colors.text_dim);
         return;
     }
 
@@ -385,7 +387,7 @@ pub fn drawSampleBrowser(r: *Renderer, ui: *EditorUI, center_x: i32, center_y: i
 
     current_y += btn_h + 10;
 
-    r.drawTextSmall("Supported: WAV, AIFF", x + 12, current_y, Colors.text_dim);
+    r.drawTextSmall("Supported: WAV, AIFF | Drag & drop files to import directly", x + 12, current_y, Colors.text_dim);
 
     return action;
 }
@@ -1295,8 +1297,9 @@ pub fn drawStartupScreen(r: *Renderer, ui: *EditorUI, width: i32, height: i32) t
         action = .new_project;
     }
 
-    r.drawTextSmall("Tip: Connect your SPD-SX via USB and it will appear as a drive.", x + 20, y + 260, Colors.text_dim);
-    r.drawTextSmall("The configuration is usually in the 'Roland' folder.", x + 20, y + 275, Colors.text_dim);
+    r.drawTextSmall("Tip: Connect your SPD-SX via USB and it will appear as a drive.", x + 20, y + 250, Colors.text_dim);
+    r.drawTextSmall("The configuration is usually in the 'Roland' folder.", x + 20, y + 265, Colors.text_dim);
+    r.drawTextSmall("You can also drag and drop a folder here to set the path.", x + 20, y + 280, Colors.accent_dark);
 
     r.drawTextSmall("Press Enter to Open, Escape for New Project", x + 20, y + dialog_h - 20, Colors.text_dim);
 

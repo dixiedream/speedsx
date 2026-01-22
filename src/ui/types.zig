@@ -401,3 +401,84 @@ pub const WaveContextMenuAction = struct {
     delete_wave: bool = false,
     wave_to_delete: u16 = 0,
 };
+
+/// File drop from host OS state
+pub const FileDropState = struct {
+    /// Whether a file was just dropped this frame
+    has_drop: bool = false,
+    /// The path of the dropped file
+    path: models.BoundedString(512) = .{},
+    /// Mouse position when drop occurred
+    drop_x: i32 = 0,
+    drop_y: i32 = 0,
+
+    /// Record a file drop event
+    pub fn recordDrop(self: *FileDropState, file_path: []const u8, mouse_x: i32, mouse_y: i32) void {
+        self.has_drop = true;
+        self.path.set(file_path);
+        self.drop_x = mouse_x;
+        self.drop_y = mouse_y;
+    }
+
+    /// Get the dropped file path
+    pub fn getPath(self: *const FileDropState) []const u8 {
+        return self.path.get();
+    }
+
+    /// Clear the drop state (call after handling)
+    pub fn clear(self: *FileDropState) void {
+        self.has_drop = false;
+        self.path.clear();
+    }
+
+    /// Check if the dropped file is a directory (for configuration path)
+    pub fn isDirectory(self: *const FileDropState) bool {
+        const path = self.getPath();
+        if (path.len == 0) return false;
+
+        // Try to open as directory
+        var dir = std.fs.cwd().openDir(path, .{}) catch return false;
+        dir.close();
+        return true;
+    }
+
+    /// Check if the dropped file is an audio file
+    pub fn isAudioFile(self: *const FileDropState) bool {
+        const path = self.getPath();
+        if (path.len == 0) return false;
+
+        // Check file extension
+        const lower_check = struct {
+            fn check(p: []const u8, ext: []const u8) bool {
+                if (p.len < ext.len) return false;
+                const suffix = p[p.len - ext.len ..];
+                for (suffix, ext) |c1, c2| {
+                    const lower1 = if (c1 >= 'A' and c1 <= 'Z') c1 + 32 else c1;
+                    if (lower1 != c2) return false;
+                }
+                return true;
+            }
+        }.check;
+
+        return lower_check(path, ".wav") or
+            lower_check(path, ".aiff") or
+            lower_check(path, ".aif");
+    }
+
+    /// Get the filename from the path
+    pub fn getFilename(self: *const FileDropState) []const u8 {
+        const path = self.getPath();
+        if (path.len == 0) return "";
+
+        // Find last separator
+        var last_sep: usize = 0;
+        for (path, 0..) |ch, i| {
+            if (ch == '/' or ch == '\\') {
+                last_sep = i + 1;
+            }
+        }
+
+        if (last_sep >= path.len) return "";
+        return path[last_sep..];
+    }
+};

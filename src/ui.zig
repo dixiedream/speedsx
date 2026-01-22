@@ -33,6 +33,7 @@ pub const KitChainAction = types.KitChainAction;
 pub const ActionButtonsResult = types.ActionButtonsResult;
 pub const FileBarAction = types.FileBarAction;
 pub const StartupAction = types.StartupAction;
+pub const FileDropState = types.FileDropState;
 
 // Re-export Renderer and EditorUI
 pub const Renderer = renderer.Renderer;
@@ -145,6 +146,8 @@ pub fn drawPadGrid(r: *Renderer, ui: *EditorUI, x: i32, y: i32, kit: *models.Kit
 
     if (ui.isDragging()) {
         r.drawTextSmall("Drop on pad (top=Main, bottom=Sub)", x, y - 14, Colors.accent);
+    } else {
+        r.drawTextSmall("Drag audio files onto pads to assign", x, y - 14, Colors.text_dim);
     }
 
     const pad_order = [9]u8{ 0, 1, 2, 3, 4, 5, 6, 7, 8 };

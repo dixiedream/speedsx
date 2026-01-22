@@ -16,6 +16,7 @@ const ClipboardState = types.ClipboardState;
 const SampleBrowserState = types.SampleBrowserState;
 const SampleFileEntry = types.SampleFileEntry;
 const WaveEditorState = types.WaveEditorState;
+const FileDropState = types.FileDropState;
 
 /// UI state for the editor
 pub const EditorUI = struct {
@@ -58,6 +59,7 @@ pub const EditorUI = struct {
     clipboard: ClipboardState = .{},
     sample_browser: SampleBrowserState = .{},
     wave_editor: WaveEditorState = .{},
+    file_drop: FileDropState = .{},
 
     // Sample usage cache (avoids recalculating every frame)
     sample_usage_cache: [models.SampleLibrary.MAX_SAMPLES]bool = [_]bool{false} ** models.SampleLibrary.MAX_SAMPLES,
