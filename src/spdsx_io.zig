@@ -3,12 +3,13 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-// CLI modules
+// CLI modules (source of truth for SPD-SX file formats)
 const cli_types = @import("cli/types.zig");
 const cli_storage = @import("cli/storage.zig");
 const cli_xml = @import("cli/xml.zig");
 const cli_xml_writer = @import("cli/xml_writer.zig");
 const cli_encoding = @import("cli/encoding.zig");
+const cli_paths = @import("cli/paths.zig");
 
 // UI models
 const models = @import("models.zig");
@@ -34,34 +35,9 @@ pub const LoadResult = struct {
     error_message: ?[]const u8,
 };
 
-/// Check if a path exists
-fn pathExists(path: []const u8) bool {
-    std.fs.cwd().access(path, .{}) catch return false;
-    return true;
-}
-
-/// Extract relative wave path from a full path
-/// e.g., "/path/to/Roland/SPD-SX/WAVE/DATA/01/file.wav" -> "01/file.wav"
-fn extractRelativeWavePath(full_path: []const u8, base_path: []const u8) []const u8 {
-    // Look for "SPD-SX/WAVE/DATA/" marker in the path
-    const marker = "SPD-SX/WAVE/DATA/";
-    if (std.mem.indexOf(u8, full_path, marker)) |pos| {
-        const relative_start = pos + marker.len;
-        if (relative_start < full_path.len) {
-            return full_path[relative_start..];
-        }
-    }
-
-    // Also try with base_path prefix directly
-    var prefix_buf: [512]u8 = undefined;
-    const prefix = std.fmt.bufPrint(&prefix_buf, "{s}/SPD-SX/WAVE/DATA/", .{base_path}) catch return full_path;
-    if (std.mem.startsWith(u8, full_path, prefix)) {
-        return full_path[prefix.len..];
-    }
-
-    // Return as-is if no prefix found (might already be relative)
-    return full_path;
-}
+// Use CLI paths module for path operations
+const pathExists = cli_paths.pathExists;
+const extractRelativeWavePath = cli_paths.extractRelativeWavePath;
 
 /// Load SPD-SX configuration from a path (e.g., /Volumes/SPD-SX_/Roland)
 /// Returns a Project populated with the loaded data
@@ -76,22 +52,20 @@ pub fn loadConfiguration(allocator: Allocator, base_path: []const u8) SpdSxError
     };
 
     // Determine actual path (handle Roland subdirectory)
-    var actual_path_buf: [512]u8 = undefined;
+    var path_buf: [512]u8 = undefined;
     var actual_path: []const u8 = base_path;
 
-    const roland_kit_path = std.fmt.bufPrint(&actual_path_buf, "{s}/SPD-SX/KIT", .{base_path}) catch {
-        return SpdSxError.InvalidPath;
-    };
-
-    if (!pathExists(roland_kit_path)) {
-        // Try with /Roland prefix
-        const with_roland = std.fmt.bufPrint(&actual_path_buf, "{s}/Roland/SPD-SX/KIT", .{base_path}) catch {
-            return SpdSxError.InvalidPath;
-        };
-        if (pathExists(with_roland)) {
-            // Update actual_path to point to the Roland subdirectory
-            var temp_buf: [512]u8 = undefined;
-            actual_path = std.fmt.bufPrint(&temp_buf, "{s}/Roland", .{base_path}) catch base_path;
+    // Check if SPD-SX/KIT exists at base_path
+    if (cli_paths.getKitDir(&path_buf, base_path)) |kit_path| {
+        if (!pathExists(kit_path)) {
+            // Try with /Roland prefix
+            var roland_buf: [512]u8 = undefined;
+            const roland_path = std.fmt.bufPrint(&roland_buf, "{s}/Roland", .{base_path}) catch base_path;
+            if (cli_paths.getKitDir(&path_buf, roland_path)) |roland_kit_path| {
+                if (pathExists(roland_kit_path)) {
+                    actual_path = roland_path;
+                }
+            }
         }
     }
 
@@ -123,33 +97,31 @@ fn loadWaves(allocator: Allocator, base_path: []const u8, library: *models.Sampl
 
     // Waves are stored in SPD-SX/WAVE/PRM/XX/YY.spd format
     // Actual WAV files are in SPD-SX/WAVE/DATA/XX/filename.wav
-    for (0..99) |folder| {
-        for (0..100) |file| {
-            const wave_path = std.fmt.bufPrint(&path_buf, "{s}/SPD-SX/WAVE/PRM/{d:0>2}/{d:0>2}.spd", .{ base_path, folder, file }) catch continue;
+    for (0..cli_paths.MAX_WAVE_FOLDERS) |folder| {
+        for (0..cli_paths.MAX_WAVES_PER_FOLDER) |file| {
+            const wave_id: u32 = @intCast(folder * cli_paths.MAX_WAVES_PER_FOLDER + file);
+            const wave_path = cli_paths.getWavePrmFilePath(&path_buf, base_path, wave_id) orelse continue;
 
             if (!pathExists(wave_path)) continue;
 
-            const wave_id: u32 = @intCast(folder * 100 + file);
             const cli_wave = cli_xml.parseWaveFile(allocator, wave_path, wave_id) catch continue;
 
             // Convert CLI wave to UI sample and add to library
             const wave_name = cli_wave.getName(allocator) catch continue;
             defer allocator.free(wave_name);
 
-            // Get the path from the wave metadata
+            // Get the path from the wave metadata (should be relative like "00/sample.wav")
             const stored_path = cli_wave.getPath();
 
             // Build the full absolute path to the actual WAV file
-            // WAV files are stored in SPD-SX/WAVE/DATA/{relative_path}
-            // But if the path is already absolute (starts with /), use it as-is
             var full_wave_path: []const u8 = undefined;
             if (stored_path.len > 0 and stored_path[0] == '/') {
                 // Already an absolute path - extract relative part to rebuild correctly
-                const rel_path = extractRelativeWavePath(stored_path, base_path);
-                full_wave_path = std.fmt.bufPrint(&full_path_buf, "{s}/SPD-SX/WAVE/DATA/{s}", .{ base_path, rel_path }) catch continue;
+                const rel_path = extractRelativeWavePath(stored_path);
+                full_wave_path = cli_paths.getFullWaveDataPath(&full_path_buf, base_path, rel_path) orelse continue;
             } else {
-                // Relative path - prepend the base
-                full_wave_path = std.fmt.bufPrint(&full_path_buf, "{s}/SPD-SX/WAVE/DATA/{s}", .{ base_path, stored_path }) catch continue;
+                // Relative path - prepend the base using CLI paths
+                full_wave_path = cli_paths.getFullWaveDataPath(&full_path_buf, base_path, stored_path) orelse continue;
             }
 
             // Add sample with metadata
@@ -185,7 +157,7 @@ fn loadKits(allocator: Allocator, base_path: []const u8, project: *models.Projec
     project.kit_count = 0;
 
     for (0..300) |i| {
-        const kit_path = std.fmt.bufPrint(&path_buf, "{s}/SPD-SX/KIT/kit{d:0>3}.spd", .{ base_path, i }) catch continue;
+        const kit_path = cli_paths.getKitFilePath(&path_buf, base_path, i) orelse continue;
 
         if (!pathExists(kit_path)) continue;
 
@@ -210,9 +182,7 @@ fn loadKits(allocator: Allocator, base_path: []const u8, project: *models.Projec
 fn loadTagList(allocator: Allocator, base_path: []const u8, library: *models.TagLibrary) !usize {
     var path_buf: [512]u8 = undefined;
 
-    const tag_path = std.fmt.bufPrint(&path_buf, "{s}/SPD-SX/SYSTEM/tag_list.spd", .{base_path}) catch {
-        return 0;
-    };
+    const tag_path = cli_paths.getTagListPath(&path_buf, base_path) orelse return 0;
 
     if (!pathExists(tag_path)) {
         return 0;
@@ -248,9 +218,7 @@ fn loadTagList(allocator: Allocator, base_path: []const u8, library: *models.Tag
 fn loadKitChains(allocator: Allocator, base_path: []const u8, library: *models.KitChainLibrary) !usize {
     var path_buf: [512]u8 = undefined;
 
-    const chain_path = std.fmt.bufPrint(&path_buf, "{s}/SPD-SX/SYSTEM/sysparam.spd", .{base_path}) catch {
-        return 0;
-    };
+    const chain_path = cli_paths.getSysparamPath(&path_buf, base_path) orelse return 0;
 
     if (!pathExists(chain_path)) {
         return 0;
@@ -507,9 +475,9 @@ pub fn saveConfiguration(allocator: Allocator, project: *const models.Project, b
         cli_wave.wave_id = w; // Consecutive numbering
         cli_wave.setName(sample.getName());
 
-        // Extract relative path (remove base_path/SPD-SX/WAVE/DATA/ prefix if present)
+        // Extract relative path using CLI paths module
         const full_path = sample.getPath();
-        const relative_path = extractRelativeWavePath(full_path, base_path);
+        const relative_path = extractRelativeWavePath(full_path);
         cli_wave.setPath(relative_path);
 
         // Copy wave metadata
@@ -561,7 +529,7 @@ fn deleteExtraKitFiles(base_path: []const u8, kit_count: u8) void {
     // Check for kit files beyond our current count and delete them
     var i: usize = kit_count;
     while (i < 300) : (i += 1) {
-        const kit_path = std.fmt.bufPrint(&path_buf, "{s}/SPD-SX/KIT/kit{d:0>3}.spd", .{ base_path, i }) catch continue;
+        const kit_path = cli_paths.getKitFilePath(&path_buf, base_path, i) orelse continue;
 
         // Try to delete the file - if it doesn't exist, we can stop searching
         // (assuming kit files are contiguous)
@@ -577,22 +545,21 @@ fn deleteExtraKitFiles(base_path: []const u8, kit_count: u8) void {
 }
 
 /// Delete wave parameter files beyond the current wave count
-/// Waves are stored as SPD-SX/WAVE/PRM/XX/YY.spd where XX is folder (00-99) and YY is file (00-99)
-/// Wave ID = folder * 100 + file
+/// Uses CLI paths module for path construction
 fn deleteExtraWaveFiles(base_path: []const u8, wave_count: u16) void {
     var path_buf: [512]u8 = undefined;
 
     // Start from the first wave ID beyond our count
-    var wave_id: usize = wave_count;
+    var wave_id: u32 = wave_count;
     var consecutive_not_found: usize = 0;
+
+    // Maximum wave ID = 99 folders * 100 files = 9900
+    const max_wave_id = cli_paths.MAX_WAVE_FOLDERS * cli_paths.MAX_WAVES_PER_FOLDER;
 
     // Scan through possible wave locations and delete extra files
     // Stop after finding 100 consecutive missing files (indicates end of waves)
-    while (wave_id < 9900 and consecutive_not_found < 100) : (wave_id += 1) {
-        const folder = wave_id / 100;
-        const file = wave_id % 100;
-
-        const wave_path = std.fmt.bufPrint(&path_buf, "{s}/SPD-SX/WAVE/PRM/{d:0>2}/{d:0>2}.spd", .{ base_path, folder, file }) catch continue;
+    while (wave_id < max_wave_id and consecutive_not_found < 100) : (wave_id += 1) {
+        const wave_path = cli_paths.getWavePrmFilePath(&path_buf, base_path, wave_id) orelse continue;
 
         std.fs.cwd().deleteFile(wave_path) catch |err| {
             if (err == error.FileNotFound) {
@@ -747,62 +714,25 @@ pub fn deleteWaveFiles(base_path: []const u8, wave_index: u16, sample_path: []co
     if (sample_path.len > 0) {
         // Only delete if the file is within the SPD-SX WAVE/DATA directory
         // to avoid accidentally deleting files from other locations
-        if (std.mem.indexOf(u8, sample_path, "SPD-SX/WAVE/DATA") != null) {
+        const wave_data_marker = cli_paths.SPDSX_ROOT ++ "/" ++ cli_paths.WAVE_DATA_DIR;
+        if (std.mem.indexOf(u8, sample_path, wave_data_marker) != null) {
             std.fs.cwd().deleteFile(sample_path) catch {};
         }
     }
 
-    // Delete the .spd parameter file
-    // Note: This deletes by the current index. After deletion, remaining waves
-    // will be renumbered on save, and deleteExtraWaveFiles will clean up orphaned files.
-    const folder = wave_index / 100;
-    const file = wave_index % 100;
-
-    const prm_path = std.fmt.bufPrint(&path_buf, "{s}/SPD-SX/WAVE/PRM/{d:0>2}/{d:0>2}.spd", .{ base_path, folder, file }) catch return;
+    // Delete the .spd parameter file using CLI paths
+    const prm_path = cli_paths.getWavePrmFilePath(&path_buf, base_path, wave_index) orelse return;
     std.fs.cwd().deleteFile(prm_path) catch {};
 }
 
 /// Check if the path looks like a valid SPD-SX configuration path
-pub fn isValidSpdSxPath(path: []const u8) bool {
-    var buf: [512]u8 = undefined;
-
-    // Check for SPD-SX/KIT directory
-    const kit_path = std.fmt.bufPrint(&buf, "{s}/SPD-SX/KIT", .{path}) catch return false;
-    if (pathExists(kit_path)) return true;
-
-    // Check with /Roland prefix
-    const roland_kit_path = std.fmt.bufPrint(&buf, "{s}/Roland/SPD-SX/KIT", .{path}) catch return false;
-    if (pathExists(roland_kit_path)) return true;
-
-    return false;
-}
+/// Delegates to CLI paths module
+pub const isValidSpdSxPath = cli_paths.isValidSpdSxPath;
 
 /// Create initial SPD-SX directory structure
+/// Delegates to CLI paths module
 pub fn createSpdSxStructure(base_path: []const u8) SpdSxError!void {
-    var buf: [512]u8 = undefined;
-
-    const dirs = [_][]const u8{
-        "/SPD-SX",
-        "/SPD-SX/KIT",
-        "/SPD-SX/WAVE",
-        "/SPD-SX/WAVE/PRM",
-        "/SPD-SX/WAVE/DATA",
-        "/SPD-SX/SYSTEM",
-    };
-
-    for (dirs) |dir| {
-        const full_path = std.fmt.bufPrint(&buf, "{s}{s}", .{ base_path, dir }) catch continue;
-        std.fs.cwd().makePath(full_path) catch continue;
-    }
-
-    // Create wave data subdirectories (00-99)
-    for (0..100) |folder| {
-        const folder_path = std.fmt.bufPrint(&buf, "{s}/SPD-SX/WAVE/DATA/{d:0>2}", .{ base_path, folder }) catch continue;
-        std.fs.cwd().makePath(folder_path) catch continue;
-
-        const prm_folder = std.fmt.bufPrint(&buf, "{s}/SPD-SX/WAVE/PRM/{d:0>2}", .{ base_path, folder }) catch continue;
-        std.fs.cwd().makePath(prm_folder) catch continue;
-    }
+    cli_paths.createDirectoryStructure(base_path);
 }
 
 /// Import result
@@ -820,7 +750,7 @@ pub const ImportResult = struct {
 
 /// Import an audio file into the SPD-SX structure
 /// Converts to 44.1kHz 16-bit WAV and copies to WAVE/DATA folder
-/// Uses CLI infrastructure for wave metadata
+/// Uses CLI infrastructure for wave metadata and paths
 pub fn importAudioFile(
     allocator: Allocator,
     source_path: []const u8,
@@ -829,8 +759,8 @@ pub fn importAudioFile(
 ) ImportResult {
     var result = ImportResult{};
 
-    // Get filename from source path
-    const filename = getFilenameFromPath(source_path);
+    // Get filename from source path using CLI paths
+    const filename = cli_paths.getFilename(source_path);
     if (filename.len == 0) {
         result.error_message = "Invalid source path";
         return result;
@@ -843,15 +773,15 @@ pub fn importAudioFile(
         return result;
     }
 
-    // Calculate folder for the wave (XX/filename.wav)
-    const folder = wave_index / 100;
+    // Calculate folder for the wave using CLI paths
+    const folder = cli_paths.getWaveFolder(wave_index);
 
-    // Ensure destination directories exist
-    ensureWaveDirectories(base_path, folder);
+    // Ensure destination directories exist using CLI paths
+    cli_paths.ensureWaveFolderExists(base_path, folder);
 
-    // Create destination path: base_path/SPD-SX/WAVE/DATA/XX/filename.wav
+    // Create destination path using CLI paths
     var dest_path_buf: [512]u8 = undefined;
-    const dest_path = std.fmt.bufPrint(&dest_path_buf, "{s}/SPD-SX/WAVE/DATA/{d:0>2}/{s}", .{ base_path, folder, filename }) catch {
+    const dest_path = cli_paths.getWaveDataFilePath(&dest_path_buf, base_path, folder, filename) orelse {
         result.error_message = "Path too long";
         return result;
     };
@@ -869,25 +799,26 @@ pub fn importAudioFile(
         return result;
     };
 
-    // Build relative path for the wave .spd file (folder/filename.wav)
+    // Build relative path for the wave .spd file using CLI paths
     var rel_path_buf: [256]u8 = undefined;
-    const rel_path_len = (std.fmt.bufPrint(&rel_path_buf, "{d:0>2}/{s}", .{ folder, filename }) catch {
+    const rel_path = cli_paths.getRelativeWavePath(&rel_path_buf, folder, filename) orelse {
         result.error_message = "Path too long";
         return result;
-    }).len;
+    };
+    const rel_path_len = rel_path.len;
 
     @memcpy(result.relative_path[0..rel_path_len], rel_path_buf[0..rel_path_len]);
     result.relative_path_len = rel_path_len;
 
-    // Build full path for the UI sample library
+    // Build full path for the UI sample library using CLI paths
     var full_path_buf: [512]u8 = undefined;
-    const full_path = std.fmt.bufPrint(&full_path_buf, "{s}/SPD-SX/WAVE/DATA/{s}", .{ base_path, result.getRelativePath() }) catch {
+    const full_path = cli_paths.getFullWaveDataPath(&full_path_buf, base_path, result.getRelativePath()) orelse {
         result.error_message = "Path too long";
         return result;
     };
 
-    // Get wave name (filename without extension)
-    const wave_name = getFilenameWithoutExt(filename);
+    // Get wave name (filename without extension) using CLI paths
+    const wave_name = cli_paths.getFilenameWithoutExt(filename);
 
     // Add to UI sample library - this will be written to .spd by saveConfiguration
     if (library.count < models.SampleLibrary.MAX_SAMPLES) {
@@ -906,9 +837,9 @@ pub fn importAudioFile(
         cli_wave.setName(wave_name);
         cli_wave.setPath(result.getRelativePath()); // Store relative path
 
-        // Write the wave .spd parameter file
+        // Write the wave .spd parameter file using CLI paths
         var prm_path_buf: [512]u8 = undefined;
-        const prm_path = std.fmt.bufPrint(&prm_path_buf, "{s}/SPD-SX/WAVE/PRM/{d:0>2}/{d:0>2}.spd", .{ base_path, folder, idx % 100 }) catch {
+        const prm_path = cli_paths.getWavePrmFilePath(&prm_path_buf, base_path, idx) orelse {
             result.error_message = "Path too long";
             return result;
         };
@@ -920,43 +851,6 @@ pub fn importAudioFile(
 
     result.success = true;
     return result;
-}
-
-/// Ensure wave directories exist for a given folder index
-fn ensureWaveDirectories(base_path: []const u8, folder: u16) void {
-    var buf: [512]u8 = undefined;
-
-    // Create WAVE/DATA/XX directory
-    const data_dir = std.fmt.bufPrint(&buf, "{s}/SPD-SX/WAVE/DATA/{d:0>2}", .{ base_path, folder }) catch return;
-    std.fs.cwd().makePath(data_dir) catch {};
-
-    // Create WAVE/PRM/XX directory
-    const prm_dir = std.fmt.bufPrint(&buf, "{s}/SPD-SX/WAVE/PRM/{d:0>2}", .{ base_path, folder }) catch return;
-    std.fs.cwd().makePath(prm_dir) catch {};
-}
-
-/// Get filename from a path
-fn getFilenameFromPath(path: []const u8) []const u8 {
-    var i = path.len;
-    while (i > 0) {
-        i -= 1;
-        if (path[i] == '/' or path[i] == '\\') {
-            return path[i + 1 ..];
-        }
-    }
-    return path;
-}
-
-/// Get filename without extension
-fn getFilenameWithoutExt(filename: []const u8) []const u8 {
-    var i = filename.len;
-    while (i > 0) {
-        i -= 1;
-        if (filename[i] == '.') {
-            return filename[0..i];
-        }
-    }
-    return filename;
 }
 
 /// Convert audio file to 44.1kHz 16-bit stereo WAV and copy to destination
