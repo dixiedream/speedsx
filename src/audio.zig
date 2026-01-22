@@ -275,11 +275,6 @@ pub const AudioPlayer = struct {
         c.SDL_ClearQueuedAudio(self.device_id);
     }
 
-    /// Set volume (0.0 to 1.0)
-    pub fn setVolume(self: *AudioPlayer, volume: f32) void {
-        self.volume = @intFromFloat(std.math.clamp(volume, 0.0, 1.0) * 128.0);
-    }
-
     /// Check if currently playing
     pub fn isPlaying(self: *const AudioPlayer) bool {
         if (!self.is_initialized) return false;
@@ -375,9 +370,6 @@ pub const AudioPlayer = struct {
 /// Check if a file is a supported audio format (delegates to file_io)
 pub const isSupportedAudioFile = file_io.isSupportedAudio;
 
-/// Get filename from path (delegates to file_io)
-pub const getFilename = file_io.getFilename;
-
 // Tests
 test "audio format detection" {
     try std.testing.expect(isSupportedAudioFile("test.wav"));
@@ -386,10 +378,4 @@ test "audio format detection" {
     try std.testing.expect(isSupportedAudioFile("test.aif"));
     try std.testing.expect(!isSupportedAudioFile("test.mp3"));
     try std.testing.expect(!isSupportedAudioFile("test.txt"));
-}
-
-test "get filename" {
-    try std.testing.expectEqualStrings("file.wav", getFilename("/path/to/file.wav"));
-    try std.testing.expectEqualStrings("file.wav", getFilename("file.wav"));
-    try std.testing.expectEqualStrings("file.wav", getFilename("C:\\path\\to\\file.wav"));
 }

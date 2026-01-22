@@ -16,6 +16,7 @@ const ClipboardState = types.ClipboardState;
 const SampleBrowserState = types.SampleBrowserState;
 const SampleFileEntry = types.SampleFileEntry;
 const WaveEditorState = types.WaveEditorState;
+const FileDropState = types.FileDropState;
 
 /// UI state for the editor
 pub const EditorUI = struct {
@@ -48,7 +49,6 @@ pub const EditorUI = struct {
 
     // Pad animation
     pad_flash: [15]f32 = [_]f32{0} ** 15,
-    is_playing: bool = false,
 
     // Composed state components
     input: InputState = .{},
@@ -59,14 +59,11 @@ pub const EditorUI = struct {
     clipboard: ClipboardState = .{},
     sample_browser: SampleBrowserState = .{},
     wave_editor: WaveEditorState = .{},
+    file_drop: FileDropState = .{},
 
-    pub fn getMouseX(self: *const EditorUI) i32 {
-        return self.input.mouse_x;
-    }
-
-    pub fn getMouseY(self: *const EditorUI) i32 {
-        return self.input.mouse_y;
-    }
+    // Sample usage cache (avoids recalculating every frame)
+    sample_usage_cache: [models.SampleLibrary.MAX_SAMPLES]bool = [_]bool{false} ** models.SampleLibrary.MAX_SAMPLES,
+    sample_usage_dirty: bool = true,
 
     pub fn init() EditorUI {
         return EditorUI{};
@@ -103,14 +100,6 @@ pub const EditorUI = struct {
 
     pub fn isClicked(self: *const EditorUI, x: i32, y: i32, w: i32, h: i32) bool {
         return self.input.mouse_clicked and self.isHovered(x, y, w, h);
-    }
-
-    pub fn togglePlay(self: *EditorUI) void {
-        self.is_playing = !self.is_playing;
-    }
-
-    pub fn stop(self: *EditorUI) void {
-        self.is_playing = false;
     }
 
     /// Start editing a text field
@@ -278,15 +267,6 @@ pub const EditorUI = struct {
         self.drag.is_dragging = false;
         self.drag.drop_target = .none;
         self.drag.drop_target_pad = 0;
-    }
-
-    /// Complete drag operation and return if a drop occurred
-    pub fn endDrag(self: *EditorUI) bool {
-        const was_dragging = self.drag.is_dragging and self.drag.drop_target != .none;
-        if (!was_dragging) {
-            self.cancelDrag();
-        }
-        return was_dragging;
     }
 
     /// Set drop target for current drag
@@ -457,6 +437,12 @@ pub const EditorUI = struct {
         return self.app_state == .startup;
     }
 
+    /// Return to startup state (to select a different folder)
+    pub fn enterStartup(self: *EditorUI) void {
+        self.app_state = .startup;
+        self.clearStartupError();
+    }
+
     /// Check if any modal is blocking input
     pub fn isModalOpen(self: *const EditorUI) bool {
         return self.show_sample_browser or self.show_midi_config or self.show_settings or self.show_kit_chain or self.show_wave_editor or self.context_menu.open;
@@ -492,11 +478,6 @@ pub const EditorUI = struct {
         self.sample_browser.file_count = 0;
         self.sample_browser.selected = 0;
         self.sample_browser.scroll = 0;
-    }
-
-    /// Add a file to sample browser list
-    pub fn addSampleBrowserFile(self: *EditorUI, name: []const u8, path: []const u8) bool {
-        return self.sample_browser.addFile(name, path);
     }
 
     /// Get selected sample file entry
@@ -543,5 +524,52 @@ pub const EditorUI = struct {
         sample.beat = self.wave_editor.beat;
         sample.measure = self.wave_editor.measure;
         sample.tag = self.wave_editor.tag;
+    }
+
+    /// Mark sample usage cache as dirty (call when pad samples change)
+    pub fn invalidateSampleUsageCache(self: *EditorUI) void {
+        self.sample_usage_dirty = true;
+    }
+
+    /// Update sample usage cache from project data
+    pub fn updateSampleUsageCache(self: *EditorUI, project: *models.Project) void {
+        if (!self.sample_usage_dirty) return;
+
+        const library = &project.sample_library;
+
+        // Clear cache
+        @memset(&self.sample_usage_cache, false);
+
+        // Mark all samples that are used by any pad
+        var kit_idx: u8 = 0;
+        while (kit_idx < project.kit_count) : (kit_idx += 1) {
+            const kit = &project.kits[kit_idx];
+            for (&kit.pads) |*pad| {
+                if (pad.has_sample) {
+                    const pad_path = pad.sample.getPath();
+                    if (pad_path.len > 0) {
+                        if (library.findByPath(pad_path)) |sample_idx| {
+                            self.sample_usage_cache[sample_idx] = true;
+                        }
+                    }
+                }
+                if (pad.has_sub_sample) {
+                    const sub_path = pad.sub_sample.getPath();
+                    if (sub_path.len > 0) {
+                        if (library.findByPath(sub_path)) |sample_idx| {
+                            self.sample_usage_cache[sample_idx] = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        self.sample_usage_dirty = false;
+    }
+
+    /// Check if a sample is used (uses cached value)
+    pub fn isSampleUsed(self: *const EditorUI, sample_index: u16) bool {
+        if (sample_index >= models.SampleLibrary.MAX_SAMPLES) return false;
+        return self.sample_usage_cache[sample_index];
     }
 };

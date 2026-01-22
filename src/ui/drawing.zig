@@ -31,6 +31,9 @@ pub fn drawWaveListPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, project: *
 
     ui.scroll.wave_list_bounds = .{ .x = x, .y = y, .w = panel_w, .h = panel_h };
 
+    // Update sample usage cache if dirty
+    ui.updateSampleUsageCache(project);
+
     r.drawRoundedRect(x, y, panel_w, panel_h, Colors.panel, true);
     r.drawRoundedRect(x, y, panel_w, panel_h, Colors.border, false);
 
@@ -52,7 +55,9 @@ pub fn drawWaveListPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, project: *
     }
 
     if (library.count == 0) {
-        r.drawTextSmall("No waves", x + 30, y + panel_h / 2 - 6, Colors.text_dim);
+        r.drawTextSmall("No waves", x + 30, y + panel_h / 2 - 12, Colors.text_dim);
+        r.drawTextSmall("Drop audio", x + 26, y + panel_h / 2 + 2, Colors.text_dim);
+        r.drawTextSmall("files here", x + 30, y + panel_h / 2 + 14, Colors.text_dim);
         return;
     }
 
@@ -64,7 +69,7 @@ pub fn drawWaveListPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, project: *
 
         const sample = &library.samples[i];
         const sample_name = sample.getName();
-        const is_used = isSampleUsed(project, i);
+        const is_used = ui.isSampleUsed(i);
         const is_selected = ui.selected_wave == i;
         const item_hovered = ui.isHovered(x + 4, item_y, panel_w - 12, item_h) and item_y >= list_top and item_y + item_h <= list_bottom;
 
@@ -97,34 +102,6 @@ pub fn drawWaveListPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, project: *
             ui.startDragWave(i, sample_name);
         }
     }
-}
-
-/// Check if sample is used
-fn isSampleUsed(project: *models.Project, sample_index: u16) bool {
-    const library = &project.sample_library;
-    if (sample_index >= library.count) return false;
-
-    const sample = &library.samples[sample_index];
-    const sample_path = sample.getPath();
-    if (sample_path.len == 0) return false;
-
-    var kit_idx: u8 = 0;
-    while (kit_idx < project.kit_count) : (kit_idx += 1) {
-        const kit = &project.kits[kit_idx];
-        for (&kit.pads) |*pad| {
-            if (pad.has_sample) {
-                if (std.mem.eql(u8, pad.sample.getPath(), sample_path)) {
-                    return true;
-                }
-            }
-            if (pad.has_sub_sample) {
-                if (std.mem.eql(u8, pad.sub_sample.getPath(), sample_path)) {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
 }
 
 /// Draw Kit list panel
@@ -226,13 +203,10 @@ pub fn drawActionButtons(r: *Renderer, ui: *EditorUI, x: i32, y: i32, project: *
     }
     btn_x += btn_w + gap;
 
-    // Delete the selected wave from the sample library
+    // Delete the selected wave from the sample library (handled by main.zig for file deletion)
     if (drawButton(r, ui, btn_x, btn_y, btn_w, btn_h, "Delete wav", !modal_blocking and project.sample_library.count > 0)) {
-        _ = project.sample_library.removeSample(ui.selected_wave);
-        // Adjust selected wave if it's now out of bounds
-        if (ui.selected_wave >= project.sample_library.count and project.sample_library.count > 0) {
-            ui.selected_wave = project.sample_library.count - 1;
-        }
+        result.delete_wave = true;
+        result.wave_to_delete = ui.selected_wave;
     }
     btn_x += btn_w + gap;
 
@@ -273,7 +247,8 @@ pub fn drawFileBar(r: *Renderer, ui: *EditorUI, x: i32, y: i32, width: i32, proj
     const path_display = if (path.len > 0) path else "/Volumes/SPD-SX_/Roland";
     r.drawTextSmall(path_display, x + 10, y + 10, Colors.text_dim);
 
-    const open_x = x + width - 140;
+    // Open button (select different folder)
+    const open_x = x + width - 210;
     if (ui.isHovered(open_x, y + 4, btn_w, 20)) {
         r.fillRect(open_x, y + 4, btn_w, 20, 0xFF3A8A3A);
     } else {
@@ -282,6 +257,12 @@ pub fn drawFileBar(r: *Renderer, ui: *EditorUI, x: i32, y: i32, width: i32, proj
     r.drawTextSmall("Open", open_x + 16, y + 10, Colors.text);
     if (ui.isClicked(open_x, y + 4, btn_w, 20)) {
         action.needs_open = true;
+    }
+
+    // Reload button (reload current configuration)
+    const reload_x = x + width - 140;
+    if (drawButton(r, ui, reload_x, y + 4, btn_w, 20, "Reload", true)) {
+        action.needs_reload = true;
     }
 
     const save_x = x + width - 70;
@@ -406,7 +387,7 @@ pub fn drawSampleBrowser(r: *Renderer, ui: *EditorUI, center_x: i32, center_y: i
 
     current_y += btn_h + 10;
 
-    r.drawTextSmall("Supported: WAV, AIFF", x + 12, current_y, Colors.text_dim);
+    r.drawTextSmall("Supported: WAV, AIFF | Drag & drop files to import directly", x + 12, current_y, Colors.text_dim);
 
     return action;
 }
@@ -1051,19 +1032,6 @@ pub fn drawKitChainEditor(r: *Renderer, ui: *EditorUI, center_x: i32, center_y: 
     return action;
 }
 
-fn drawChainNameBox(r: *Renderer, ui: *const EditorUI, x: i32, y: i32, w: i32, h: i32, chain: *models.KitChain) void {
-    const hovered = ui.isHovered(x, y, w, h);
-    const bg_color = if (hovered) Colors.panel_light else Colors.slider_bg;
-
-    r.drawRoundedRect(x, y, w, h, bg_color, true);
-    r.drawRoundedRect(x, y, w, h, Colors.border, false);
-
-    const name = chain.getName();
-    const display_len = @min(name.len, 20);
-    const display_text = if (name.len > 0) name[0..display_len] else "Unnamed";
-    r.drawTextSmall(display_text, x + 4, y + @divFloor(h - 6, 2), Colors.text);
-}
-
 /// Draw context menu for pads
 pub fn drawPadContextMenu(r: *Renderer, ui: *EditorUI, kit: *models.Kit) bool {
     if (!ui.context_menu.open or ui.context_menu.menu_type != .pad) return false;
@@ -1111,6 +1079,7 @@ pub fn drawPadContextMenu(r: *Renderer, ui: *EditorUI, kit: *models.Kit) bool {
     }
     if (paste_hovered and ui.input.mouse_clicked) {
         ui.pastePad(pad);
+        ui.invalidateSampleUsageCache();
         ui.closeContextMenu();
         menu_clicked = true;
     }
@@ -1123,6 +1092,7 @@ pub fn drawPadContextMenu(r: *Renderer, ui: *EditorUI, kit: *models.Kit) bool {
     r.drawTextSmall("Clear", x + 8, item_y + 6, Colors.text);
     if (clear_hovered and ui.input.mouse_clicked) {
         pad.reset();
+        ui.invalidateSampleUsageCache();
         ui.closeContextMenu();
         menu_clicked = true;
     }
@@ -1148,9 +1118,11 @@ pub fn drawPadContextMenu(r: *Renderer, ui: *EditorUI, kit: *models.Kit) bool {
     return menu_clicked;
 }
 
-/// Draw context menu for waves - returns true if "Edit Wave" was clicked
-pub fn drawWaveContextMenu(r: *Renderer, ui: *EditorUI, project: *models.Project) bool {
-    if (!ui.context_menu.open or ui.context_menu.menu_type != .wave) return false;
+/// Draw context menu for waves - returns actions to perform
+pub fn drawWaveContextMenu(r: *Renderer, ui: *EditorUI, project: *const models.Project) types.WaveContextMenuAction {
+    var action = types.WaveContextMenuAction{};
+
+    if (!ui.context_menu.open or ui.context_menu.menu_type != .wave) return action;
 
     const menu_w: i32 = 100;
     const item_h: i32 = 22;
@@ -1165,7 +1137,6 @@ pub fn drawWaveContextMenu(r: *Renderer, ui: *EditorUI, project: *models.Project
     r.drawRect(x, y, menu_w, menu_h, Colors.accent);
 
     var item_y = y + 1;
-    var open_editor = false;
     const wave_index = ui.context_menu.wave;
     const has_wave = wave_index < project.sample_library.count;
 
@@ -1178,7 +1149,7 @@ pub fn drawWaveContextMenu(r: *Renderer, ui: *EditorUI, project: *models.Project
     r.drawTextSmall("Edit Wave", x + 8, item_y + 6, edit_color);
     if (edit_hovered and ui.input.mouse_clicked) {
         ui.closeContextMenu();
-        open_editor = true;
+        action.open_editor = true;
     }
     item_y += item_h;
 
@@ -1190,10 +1161,8 @@ pub fn drawWaveContextMenu(r: *Renderer, ui: *EditorUI, project: *models.Project
     const delete_color = if (has_wave) 0xFFE04040 else Colors.text_dim;
     r.drawTextSmall("Delete", x + 8, item_y + 6, delete_color);
     if (delete_hovered and ui.input.mouse_clicked) {
-        _ = project.sample_library.removeSample(wave_index);
-        if (ui.selected_wave >= project.sample_library.count and project.sample_library.count > 0) {
-            ui.selected_wave = project.sample_library.count - 1;
-        }
+        action.delete_wave = true;
+        action.wave_to_delete = wave_index;
         ui.closeContextMenu();
     }
     item_y += item_h;
@@ -1215,7 +1184,7 @@ pub fn drawWaveContextMenu(r: *Renderer, ui: *EditorUI, project: *models.Project
         ui.closeContextMenu();
     }
 
-    return open_editor;
+    return action;
 }
 
 /// Draw drag indicator
@@ -1258,9 +1227,11 @@ pub fn applyDropFromLibrary(ui: *EditorUI, kit: *models.Kit, library: *models.Sa
     switch (ui.drag.drop_target) {
         .pad_main => {
             pad.loadSample(wave_name, wave_path);
+            ui.invalidateSampleUsageCache();
         },
         .pad_sub => {
             pad.loadSubSample(wave_name, wave_path);
+            ui.invalidateSampleUsageCache();
         },
         .none => {},
     }
@@ -1326,8 +1297,9 @@ pub fn drawStartupScreen(r: *Renderer, ui: *EditorUI, width: i32, height: i32) t
         action = .new_project;
     }
 
-    r.drawTextSmall("Tip: Connect your SPD-SX via USB and it will appear as a drive.", x + 20, y + 260, Colors.text_dim);
-    r.drawTextSmall("The configuration is usually in the 'Roland' folder.", x + 20, y + 275, Colors.text_dim);
+    r.drawTextSmall("Tip: Connect your SPD-SX via USB and it will appear as a drive.", x + 20, y + 250, Colors.text_dim);
+    r.drawTextSmall("The configuration is usually in the 'Roland' folder.", x + 20, y + 265, Colors.text_dim);
+    r.drawTextSmall("You can also drag and drop a folder here to set the path.", x + 20, y + 280, Colors.accent_dark);
 
     r.drawTextSmall("Press Enter to Open, Escape for New Project", x + 20, y + dialog_h - 20, Colors.text_dim);
 

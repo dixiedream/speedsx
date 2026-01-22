@@ -37,10 +37,6 @@ pub fn BoundedString(comptime capacity: usize) type {
             return self.len == 0;
         }
 
-        /// Get the capacity
-        pub fn getCapacity() usize {
-            return capacity;
-        }
     };
 }
 
@@ -400,12 +396,12 @@ pub const Kit = struct {
 
     // FX1 settings
     fx1_switch: bool = true,
-    fx1_type: Fx1Type = .thru,
+    fx1_type: FxType = .thru,
     fx1_params: FxParams = FxParams.init(),
 
     // FX2 settings
     fx2_switch: bool = true,
-    fx2_type: Fx2Type = .thru,
+    fx2_type: FxType = .thru,
     fx2_params: FxParams = FxParams.init(),
     fx2_assign: Fx2Assign = .all,
 
@@ -427,51 +423,6 @@ pub const Kit = struct {
         return kit;
     }
 
-    /// Get a main pad (0-8)
-    pub fn getMainPad(self: *Kit, index: usize) *Pad {
-        return &self.pads[index];
-    }
-
-    /// Get a trigger pad (0-3 -> pads 9-12)
-    pub fn getTriggerPad(self: *Kit, index: usize) *Pad {
-        return &self.pads[NUM_MAIN_PADS + index];
-    }
-
-    /// Get a footswitch pad (0-1 -> pads 13-14)
-    pub fn getFootswitchPad(self: *Kit, index: usize) *Pad {
-        return &self.pads[NUM_MAIN_PADS + NUM_TRIGGERS + index];
-    }
-
-    /// Check if pad index is a main pad
-    pub fn isMainPad(index: u8) bool {
-        return index < NUM_MAIN_PADS;
-    }
-
-    /// Check if pad index is a trigger
-    pub fn isTriggerPad(index: u8) bool {
-        return index >= NUM_MAIN_PADS and index < NUM_MAIN_PADS + NUM_TRIGGERS;
-    }
-
-    /// Check if pad index is a footswitch
-    pub fn isFootswitchPad(index: u8) bool {
-        return index >= NUM_MAIN_PADS + NUM_TRIGGERS and index < NUM_PADS;
-    }
-
-    /// Get display name for a pad index
-    pub fn getPadDisplayName(index: u8) []const u8 {
-        if (index < NUM_MAIN_PADS) {
-            const names = [_][]const u8{ "PAD 1", "PAD 2", "PAD 3", "PAD 4", "PAD 5", "PAD 6", "PAD 7", "PAD 8", "PAD 9" };
-            return names[index];
-        } else if (index < NUM_MAIN_PADS + NUM_TRIGGERS) {
-            const names = [_][]const u8{ "TRIG 1", "TRIG 2", "TRIG 3", "TRIG 4" };
-            return names[index - NUM_MAIN_PADS];
-        } else if (index < NUM_PADS) {
-            const names = [_][]const u8{ "FS 1", "FS 2" };
-            return names[index - NUM_MAIN_PADS - NUM_TRIGGERS];
-        }
-        return "?";
-    }
-
     pub fn setName(self: *Kit, new_name: []const u8) void {
         self.name.set(new_name);
     }
@@ -490,20 +441,6 @@ pub const Kit = struct {
 
     pub fn getPad(self: *Kit, index: usize) *Pad {
         return &self.pads[index];
-    }
-
-    pub fn getTempoFloat(self: *const Kit) f32 {
-        return @as(f32, @floatFromInt(self.tempo)) + @as(f32, @floatFromInt(self.tempo_decimal)) / 10.0;
-    }
-
-    pub fn setTempoFloat(self: *Kit, tempo: f32) void {
-        self.tempo = @intFromFloat(tempo);
-        self.tempo_decimal = @intFromFloat((tempo - @as(f32, @floatFromInt(self.tempo))) * 10.0);
-    }
-
-    pub fn copyFrom(self: *Kit, other: *const Kit) void {
-        self.* = other.*;
-        self.modified = false;
     }
 
     pub fn duplicate(self: *const Kit) Kit {
@@ -619,8 +556,6 @@ pub const Project = struct {
 pub const SampleLibrary = struct {
     samples: [MAX_SAMPLES]Sample = undefined,
     count: u16 = 0,
-    categories: [16][32]u8 = undefined,
-    category_count: u8 = 0,
 
     pub const MAX_SAMPLES = 1000;
 
@@ -684,7 +619,7 @@ pub const SampleLibrary = struct {
 
 /// Tag entry for categorizing samples
 pub const TagEntry = struct {
-    name: BoundedString(16) = .{},
+    name: BoundedString(12) = .{},
     order: u8 = 0,
 
     pub fn init() TagEntry {
@@ -705,32 +640,11 @@ pub const TagLibrary = struct {
     tags: [MAX_TAGS]TagEntry = undefined,
     count: u8 = 0,
 
-    pub const MAX_TAGS = 12;
-
-    // Default SPD-SX tags
-    const DEFAULT_TAGS = [_][]const u8{
-        "KICK",
-        "SNARE",
-        "HI-HAT",
-        "CYMBAL",
-        "TOM",
-        "PERCUSSION",
-        "PHRASE",
-        "FX",
-        "LOOP",
-        "OTHERS",
-        "USER1",
-        "USER2",
-    };
+    // pub const MAX_TAGS = 12;
+    pub const MAX_TAGS = 30;
 
     pub fn init() TagLibrary {
         var lib = TagLibrary{};
-        // Initialize with default tags
-        for (DEFAULT_TAGS, 0..) |tag_name, i| {
-            lib.tags[i] = TagEntry.init();
-            lib.tags[i].setName(tag_name);
-            lib.tags[i].order = @intCast(i);
-        }
         lib.count = MAX_TAGS;
         return lib;
     }
@@ -754,74 +668,53 @@ pub const TagLibrary = struct {
     }
 };
 
-/// FX1 effect types (matches SPD-SX FX1 types)
-pub const Fx1Type = enum(u8) {
+/// FX effect types (matches SPD-SX FX types)
+pub const FxType = enum(u8) {
     thru = 0,
-    equalizer = 1,
-    isolator = 2,
-    low_boost = 3,
-    super_filter = 4,
-    step_filter = 5,
-    compressor = 6,
-    limiter = 7,
-    overdrive = 8,
-    distortion = 9,
-    bit_crasher = 10,
-    tremolo = 11,
-    phaser = 12,
-    flanger = 13,
-    chorus = 14,
-    delay = 15,
-    tape_echo = 16,
-    reverb = 17,
-    ring_mod = 18,
-    slicer = 19,
+    stereo_delay = 1,
+    sync_delay = 2,
+    tape_echo = 3,
+    chorus = 4,
+    flanger = 5,
+    step_flanger = 6,
+    phaser = 7,
+    step_phaser = 8,
+    equalizer = 9,
+    compressor = 10,
+    filter = 11,
+    filt_drive = 12,
+    isolator = 13,
+    touch_wah = 14,
+    distortion = 15,
+    ringmod = 16,
+    pitch_shift = 17,
+    vibrato = 18,
+    reverb = 19,
+    slicer = 20,
 
-    pub fn toString(self: Fx1Type) []const u8 {
+    pub fn toString(self: FxType) []const u8 {
         return switch (self) {
             .thru => "THRU",
-            .equalizer => "EQUALIZER",
-            .isolator => "ISOLATOR",
-            .low_boost => "LOW BOOST",
-            .super_filter => "SUPER FILTER",
-            .step_filter => "STEP FILTER",
-            .compressor => "COMPRESSOR",
-            .limiter => "LIMITER",
-            .overdrive => "OVERDRIVE",
-            .distortion => "DISTORTION",
-            .bit_crasher => "BIT CRASHER",
-            .tremolo => "TREMOLO",
-            .phaser => "PHASER",
-            .flanger => "FLANGER",
+            .stereo_delay => "STEREO DLY",
+            .sync_delay => "SYNC DELAY",
+            .tape_echo => "TAPE ECHO",
             .chorus => "CHORUS",
-            .delay => "DELAY",
-            .tape_echo => "TAPE ECHO",
+            .flanger => "FLANGER",
+            .step_flanger => "STEP FLNGR",
+            .phaser => "PHASER",
+            .step_phaser => "STEP PHASR",
+            .equalizer => "EQ",
+            .compressor => "COMPRESSOR",
+            .filter => "FILTER",
+            .filt_drive => "FILT+DRIVE",
+            .isolator => "ISOLATOR",
+            .touch_wah => "TOUCH WAH",
+            .distortion => "DISTORTION",
+            .ringmod => "RINGMOD",
+            .pitch_shift => "PITCHSHIFT",
+            .vibrato => "VIBRATO",
             .reverb => "REVERB",
-            .ring_mod => "RING MOD",
             .slicer => "SLICER",
-        };
-    }
-};
-
-/// FX2 effect types (matches SPD-SX FX2 types)
-pub const Fx2Type = enum(u8) {
-    thru = 0,
-    hall = 1,
-    room = 2,
-    plate = 3,
-    delay = 4,
-    pan_delay = 5,
-    tape_echo = 6,
-
-    pub fn toString(self: Fx2Type) []const u8 {
-        return switch (self) {
-            .thru => "THRU",
-            .hall => "HALL",
-            .room => "ROOM",
-            .plate => "PLATE",
-            .delay => "DELAY",
-            .pan_delay => "PAN DELAY",
-            .tape_echo => "TAPE ECHO",
         };
     }
 };
@@ -882,33 +775,6 @@ pub const FxParams = struct {
 
     pub fn set(self: *FxParams, index: usize, value: u8) void {
         if (index < 20) self.params[index] = value;
-    }
-};
-
-/// Effect types available (legacy, kept for compatibility)
-pub const EffectType = enum(u8) {
-    none = 0,
-    reverb = 1,
-    delay = 2,
-    chorus = 3,
-    flanger = 4,
-    distortion = 5,
-    compressor = 6,
-    eq = 7,
-    filter = 8,
-
-    pub fn toString(self: EffectType) []const u8 {
-        return switch (self) {
-            .none => "None",
-            .reverb => "Reverb",
-            .delay => "Delay",
-            .chorus => "Chorus",
-            .flanger => "Flanger",
-            .distortion => "Distortion",
-            .compressor => "Compressor",
-            .eq => "EQ",
-            .filter => "Filter",
-        };
     }
 };
 
@@ -1133,29 +999,6 @@ test "Kit initialization and pad access" {
     try testing.expectEqual(@as(i16, -1), kit.pads[0].midi_note);
     try testing.expectEqual(@as(i16, -1), kit.pads[1].midi_note);
     try testing.expectEqual(@as(i16, -1), kit.pads[14].midi_note);
-
-    // Test pad type checks
-    try testing.expect(Kit.isMainPad(0));
-    try testing.expect(Kit.isMainPad(8));
-    try testing.expect(!Kit.isMainPad(9));
-
-    try testing.expect(Kit.isTriggerPad(9));
-    try testing.expect(Kit.isTriggerPad(12));
-    try testing.expect(!Kit.isTriggerPad(13));
-
-    try testing.expect(Kit.isFootswitchPad(13));
-    try testing.expect(Kit.isFootswitchPad(14));
-    try testing.expect(!Kit.isFootswitchPad(12));
-}
-
-test "Kit display names" {
-    try testing.expectEqualStrings("PAD 1", Kit.getPadDisplayName(0));
-    try testing.expectEqualStrings("PAD 9", Kit.getPadDisplayName(8));
-    try testing.expectEqualStrings("TRIG 1", Kit.getPadDisplayName(9));
-    try testing.expectEqualStrings("TRIG 4", Kit.getPadDisplayName(12));
-    try testing.expectEqualStrings("FS 1", Kit.getPadDisplayName(13));
-    try testing.expectEqualStrings("FS 2", Kit.getPadDisplayName(14));
-    try testing.expectEqualStrings("?", Kit.getPadDisplayName(15));
 }
 
 test "Project kit management" {

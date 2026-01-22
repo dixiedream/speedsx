@@ -3,7 +3,6 @@ const sdl = @import("sdl.zig");
 const c = sdl.c;
 const models = @import("models.zig");
 const ui = @import("ui.zig");
-const file_io = @import("file_io.zig");
 const spdsx_io = @import("spdsx_io.zig");
 const audio = @import("audio.zig");
 const user_config = @import("config.zig");
@@ -169,8 +168,25 @@ pub fn main() !void {
                 c.SDL_MOUSEWHEEL => {
                     app.editor_ui.handleMouseWheel(event.wheel.y);
                 },
+                c.SDL_DROPFILE => {
+                    // Handle file drop from host OS
+                    if (event.drop.file) |file_ptr| {
+                        const file_path = std.mem.span(file_ptr);
+                        app.editor_ui.file_drop.recordDrop(
+                            file_path,
+                            app.editor_ui.input.mouse_x,
+                            app.editor_ui.input.mouse_y,
+                        );
+                        c.SDL_free(file_ptr);
+                    }
+                },
                 else => {},
             }
+        }
+
+        // Process file drops
+        if (app.editor_ui.file_drop.has_drop) {
+            handleFileDrop(&app);
         }
 
         // Update
@@ -184,6 +200,224 @@ pub fn main() !void {
         // Draw
         draw(&app, width, height);
     }
+}
+
+/// Handle file drop from host OS
+fn handleFileDrop(app: *App) void {
+    defer app.editor_ui.file_drop.clear();
+
+    const file_drop = &app.editor_ui.file_drop;
+    const dropped_path = file_drop.getPath();
+
+    if (dropped_path.len == 0) return;
+
+    // Different behavior based on application state
+    if (app.editor_ui.isInStartup()) {
+        // On startup screen: set configuration path
+        handleStartupFileDrop(app, dropped_path);
+    } else {
+        // In editor: import audio file or set path
+        handleEditorFileDrop(app, dropped_path);
+    }
+}
+
+/// Handle file drop on startup screen
+fn handleStartupFileDrop(app: *App, dropped_path: []const u8) void {
+    // Check if it's a directory
+    var dir = std.fs.cwd().openDir(dropped_path, .{}) catch {
+        // Not a directory - might be a file, try to get parent
+        if (std.mem.lastIndexOfScalar(u8, dropped_path, '/')) |idx| {
+            const parent_path = dropped_path[0..idx];
+            app.editor_ui.setStartupPath(parent_path);
+            app.editor_ui.showStatus("Path set from dropped file's directory", false);
+        } else {
+            app.editor_ui.setStartupError("Invalid path dropped");
+        }
+        return;
+    };
+    dir.close();
+
+    // It's a directory - set it as the startup path
+    app.editor_ui.setStartupPath(dropped_path);
+    app.editor_ui.clearStartupError();
+    app.editor_ui.showStatus("Configuration path set", false);
+}
+
+/// Handle file drop in editor
+fn handleEditorFileDrop(app: *App, dropped_path: []const u8) void {
+    const file_drop = &app.editor_ui.file_drop;
+
+    // Check if it's an audio file
+    if (file_drop.isAudioFile()) {
+        handleAudioFileDrop(app, dropped_path);
+        // Close sample browser if it's open (file was imported directly)
+        if (app.editor_ui.show_sample_browser) {
+            app.editor_ui.closeSampleBrowser();
+        }
+        return;
+    }
+
+    // Check if it's a directory
+    var dir = std.fs.cwd().openDir(dropped_path, .{}) catch {
+        app.editor_ui.showError("Unsupported file type (use WAV/AIFF)");
+        return;
+    };
+    dir.close();
+
+    // If sample browser is open, set as sample browser path
+    if (app.editor_ui.show_sample_browser) {
+        app.editor_ui.setSampleBrowserPath(dropped_path);
+        app.editor_ui.showStatus("Sample folder path set - click Scan", false);
+    } else {
+        // Directory dropped - show a message
+        app.editor_ui.showStatus("Drop audio files (WAV/AIFF) to import", false);
+    }
+}
+
+/// Handle audio file drop - import to sample library or directly to pad
+fn handleAudioFileDrop(app: *App, dropped_path: []const u8) void {
+    const file_drop = &app.editor_ui.file_drop;
+    const drop_x = file_drop.drop_x;
+    const drop_y = file_drop.drop_y;
+
+    // Get the base path for the SPD-SX configuration
+    const base_path = app.project.getFilePath();
+    if (base_path.len == 0) {
+        app.editor_ui.showError("No project path set - save project first");
+        return;
+    }
+
+    // Import the audio file (converts to 44.1kHz 16-bit and copies to WAVE/DATA)
+    const import_result = spdsx_io.importAudioFile(
+        app.allocator,
+        dropped_path,
+        base_path,
+        &app.project.sample_library,
+    );
+
+    if (!import_result.success) {
+        if (import_result.error_message) |msg| {
+            app.editor_ui.showError(msg);
+        } else {
+            app.editor_ui.showError("Failed to import audio file");
+        }
+        return;
+    }
+
+    // Get the sample that was just added
+    const sample_idx = import_result.sample_index orelse {
+        app.editor_ui.showError("Failed to add to library");
+        return;
+    };
+
+    const sample = &app.project.sample_library.samples[sample_idx];
+    const sample_name = sample.getName();
+    const sample_path = sample.getPath();
+
+    // Check if drop is over a pad
+    const pad_drop_result = getPadAtPosition(&app.editor_ui, drop_x, drop_y);
+
+    if (pad_drop_result.on_pad) {
+        // Dropped directly on a pad - assign to that pad
+        const pad = app.project.currentKit().getPad(pad_drop_result.pad_index);
+
+        // Assign to pad (main or sub based on zone)
+        if (pad_drop_result.is_sub_zone) {
+            pad.loadSubSample(sample_name, sample_path);
+            app.editor_ui.showSuccess("Sample imported and assigned to sub");
+        } else {
+            pad.loadSample(sample_name, sample_path);
+            app.editor_ui.showSuccess("Sample imported and assigned to pad");
+        }
+
+        app.editor_ui.invalidateSampleUsageCache();
+        app.editor_ui.selected_pad = pad_drop_result.pad_index;
+    } else {
+        // Not on a pad - just imported to sample library
+        app.editor_ui.selected_wave = sample_idx;
+        app.editor_ui.showSuccess("Sample imported to library");
+    }
+
+    app.editor_ui.invalidateSampleUsageCache();
+}
+
+/// Result of checking if mouse is over a pad
+const PadDropResult = struct {
+    on_pad: bool = false,
+    pad_index: u8 = 0,
+    is_sub_zone: bool = false,
+};
+
+/// Check if a position is over a pad and return pad info
+fn getPadAtPosition(editor_ui: *const ui.EditorUI, mouse_x: i32, mouse_y: i32) PadDropResult {
+    _ = editor_ui;
+    var result = PadDropResult{};
+
+    const L = ui.Layout;
+    const content_y = L.content_y;
+    const grid_x = L.left_panel_width + L.grid_offset_x;
+    const grid_y = content_y + L.grid_offset_y;
+    const pad_size = L.pad_size;
+    const gap = L.pad_gap;
+
+    // Check main pad grid (3x3)
+    for (0..3) |row| {
+        for (0..3) |col| {
+            const pad_index: u8 = @intCast(row * 3 + col);
+            const pad_x = grid_x + @as(i32, @intCast(col)) * (pad_size + gap);
+            const pad_y = grid_y + @as(i32, @intCast(row)) * (pad_size + gap);
+
+            if (mouse_x >= pad_x and mouse_x < pad_x + pad_size and
+                mouse_y >= pad_y and mouse_y < pad_y + pad_size)
+            {
+                result.on_pad = true;
+                result.pad_index = pad_index;
+                // Check if in sub zone (lower half of pad)
+                result.is_sub_zone = mouse_y >= pad_y + @divFloor(pad_size, 2);
+                return result;
+            }
+        }
+    }
+
+    // Check auxiliary pads (triggers and footswitches)
+    const aux_section_y = grid_y + L.pad_grid_height;
+    const aux_pad_w = L.aux_pad_width;
+    const aux_pad_h = L.aux_pad_height;
+    const aux_gap = L.aux_pad_gap;
+
+    // Triggers (4 pads)
+    var trig_y = aux_section_y + 14;
+    var trig_x = grid_x;
+    for (0..4) |i| {
+        const pad_index: u8 = @intCast(models.Kit.NUM_MAIN_PADS + i);
+        if (mouse_x >= trig_x and mouse_x < trig_x + aux_pad_w and
+            mouse_y >= trig_y and mouse_y < trig_y + aux_pad_h)
+        {
+            result.on_pad = true;
+            result.pad_index = pad_index;
+            result.is_sub_zone = false; // Aux pads don't have sub zones
+            return result;
+        }
+        trig_x += aux_pad_w + aux_gap;
+    }
+
+    // Footswitches (2 pads)
+    trig_y += aux_pad_h + aux_gap;
+    var fs_x = grid_x;
+    for (0..2) |i| {
+        const pad_index: u8 = @intCast(models.Kit.NUM_MAIN_PADS + models.Kit.NUM_TRIGGERS + i);
+        if (mouse_x >= fs_x and mouse_x < fs_x + aux_pad_w and
+            mouse_y >= trig_y and mouse_y < trig_y + aux_pad_h)
+        {
+            result.on_pad = true;
+            result.pad_index = pad_index;
+            result.is_sub_zone = false;
+            return result;
+        }
+        fs_x += aux_pad_w + aux_gap;
+    }
+
+    return result;
 }
 
 fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
@@ -302,6 +536,7 @@ fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
                 // Paste to selected pad
                 const pad = app.project.currentKit().getPad(app.editor_ui.selected_pad);
                 app.editor_ui.pastePad(pad);
+                app.editor_ui.invalidateSampleUsageCache();
             }
         },
         c.SDLK_n => {
@@ -435,6 +670,7 @@ fn tryOpenProject(app: *App) void {
         // Load from real SPD-SX format
         if (spdsx_io.loadConfiguration(app.allocator, path)) |result| {
             app.project = result.project;
+            app.editor_ui.invalidateSampleUsageCache();
             app.editor_ui.enterEditor();
             user_config.saveLastPath(path); // Remember this path for next startup
         } else |err| {
@@ -505,6 +741,7 @@ fn loadProject(app: *App) void {
     if (spdsx_io.isValidSpdSxPath(path)) {
         if (spdsx_io.loadConfiguration(app.allocator, path)) |result| {
             app.project = result.project;
+            app.editor_ui.invalidateSampleUsageCache();
             app.editor_ui.showSuccess("Project reloaded");
         } else |_| {
             app.editor_ui.showError("Failed to reload SPD-SX configuration");
@@ -584,18 +821,41 @@ fn playSelectedSample(app: *App) void {
 /// Pad assignment is done separately via drag & drop from the wave list
 fn loadSelectedSample(app: *App) void {
     const file = app.editor_ui.getSelectedSampleFile() orelse return;
-    const file_name = file.getName();
     const file_path = file.getPath();
 
     if (file_path.len == 0) return;
 
-    // Add to sample library only - pad assignment is a separate action
-    const wave_idx = app.project.sample_library.addOrFind(file_name, file_path);
+    // Get the base path for the SPD-SX configuration
+    const base_path = app.project.getFilePath();
+    if (base_path.len == 0) {
+        app.editor_ui.showError("No project path set - save project first");
+        return;
+    }
+
+    // Import the audio file (converts to 44.1kHz 16-bit and copies to WAVE/DATA)
+    const import_result = spdsx_io.importAudioFile(
+        app.allocator,
+        file_path,
+        base_path,
+        &app.project.sample_library,
+    );
+
+    if (!import_result.success) {
+        if (import_result.error_message) |msg| {
+            app.editor_ui.showError(msg);
+        } else {
+            app.editor_ui.showError("Failed to import audio file");
+        }
+        return;
+    }
 
     // Select the newly added wave in the wave list
-    if (wave_idx) |idx| {
+    if (import_result.sample_index) |idx| {
         app.editor_ui.selected_wave = idx;
+        app.editor_ui.showSuccess("Sample imported to library");
     }
+
+    app.editor_ui.invalidateSampleUsageCache();
 
     // Close the browser
     app.editor_ui.closeSampleBrowser();
@@ -626,6 +886,31 @@ fn playPadSample(app: *App, pad_index: u8) void {
 /// Play the sample from the currently selected pad
 fn playCurrentPadSample(app: *App) void {
     playPadSample(app, app.editor_ui.selected_pad);
+}
+
+/// Delete a wave from the sample library and its physical files
+fn deleteWave(app: *App, wave_index: u16) void {
+    if (wave_index >= app.project.sample_library.count) return;
+
+    // Get the sample path before removing
+    const sample = &app.project.sample_library.samples[wave_index];
+    const sample_path = sample.getPath();
+    const base_path = app.project.getFilePath();
+
+    // Delete physical files (WAV and .spd parameter file)
+    if (base_path.len > 0) {
+        spdsx_io.deleteWaveFiles(base_path, wave_index, sample_path);
+    }
+
+    // Remove from the in-memory sample library
+    _ = app.project.sample_library.removeSample(wave_index);
+
+    // Adjust selected wave if it's now out of bounds
+    if (app.editor_ui.selected_wave >= app.project.sample_library.count and app.project.sample_library.count > 0) {
+        app.editor_ui.selected_wave = app.project.sample_library.count - 1;
+    }
+
+    app.editor_ui.showSuccess("Wave deleted");
 }
 
 fn update(app: *App, delta: f32) void {
@@ -709,11 +994,18 @@ fn draw(app: *App, width: c_int, height: c_int) void {
     if (action_result.stop_sample) {
         app.audio_player.stop();
     }
+    if (action_result.delete_wave) {
+        deleteWave(app, action_result.wave_to_delete);
+    }
 
-    // File bar at bottom (with Open/Save)
+    // File bar at bottom (with Open/Reload/Save)
     const file_bar_y = height - L.file_bar_height;
     const file_action = ui.drawFileBar(r, &app.editor_ui, 0, file_bar_y, width, &app.project);
     if (file_action.needs_open) {
+        // Return to startup screen to select a different folder
+        app.editor_ui.enterStartup();
+    }
+    if (file_action.needs_reload) {
         loadProject(app);
     }
     if (file_action.needs_save) {
@@ -789,8 +1081,9 @@ fn draw(app: *App, width: c_int, height: c_int) void {
     // Draw context menus (on top of most elements)
     _ = ui.drawPadContextMenu(r, &app.editor_ui, app.project.currentKit());
 
-    // Wave context menu - returns true if "Edit Wave" was clicked
-    if (ui.drawWaveContextMenu(r, &app.editor_ui, &app.project)) {
+    // Wave context menu
+    const wave_menu_action = ui.drawWaveContextMenu(r, &app.editor_ui, &app.project);
+    if (wave_menu_action.open_editor) {
         const wave_idx = app.editor_ui.context_menu.wave;
         if (wave_idx < app.project.sample_library.count) {
             const sample = &app.project.sample_library.samples[wave_idx];
@@ -814,6 +1107,9 @@ fn draw(app: *App, width: c_int, height: c_int) void {
                 }
             }
         }
+    }
+    if (wave_menu_action.delete_wave) {
+        deleteWave(app, wave_menu_action.wave_to_delete);
     }
 
     // Draw drag indicator last (on top of everything)

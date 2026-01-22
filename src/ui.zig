@@ -4,7 +4,6 @@ const std = @import("std");
 const sdl = @import("sdl.zig");
 const c = sdl.c;
 const models = @import("models.zig");
-const font = @import("font.zig");
 
 // Import from ui/ submodules
 pub const types = @import("ui/types.zig");
@@ -33,6 +32,7 @@ pub const KitChainAction = types.KitChainAction;
 pub const ActionButtonsResult = types.ActionButtonsResult;
 pub const FileBarAction = types.FileBarAction;
 pub const StartupAction = types.StartupAction;
+pub const FileDropState = types.FileDropState;
 
 // Re-export Renderer and EditorUI
 pub const Renderer = renderer.Renderer;
@@ -48,10 +48,8 @@ pub const drawToggle = widgets.drawToggle;
 pub const lerpColor = widgets.lerpColor;
 pub const lightenColor = widgets.lightenColor;
 
-// Private widget helpers
-const drawScrollbar = widgets.drawScrollbar;
+// Private widget helpers used in this file
 const drawTextBox = widgets.drawTextBox;
-const drawGreenButton = widgets.drawGreenButton;
 
 /// Draw a single pad with drag and drop support
 pub fn drawPad(r: *Renderer, ui: *EditorUI, x: i32, y: i32, size: i32, pad: *const models.Pad, index: u8) bool {
@@ -147,6 +145,8 @@ pub fn drawPadGrid(r: *Renderer, ui: *EditorUI, x: i32, y: i32, kit: *models.Kit
 
     if (ui.isDragging()) {
         r.drawTextSmall("Drop on pad (top=Main, bottom=Sub)", x, y - 14, Colors.accent);
+    } else {
+        r.drawTextSmall("Drag audio files onto pads to assign", x, y - 14, Colors.text_dim);
     }
 
     const pad_order = [9]u8{ 0, 1, 2, 3, 4, 5, 6, 7, 8 };
@@ -667,12 +667,12 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     content_y += 38;
 
     // FX2 Assign
-    draw_y = y + content_y - scroll_offset;
-    if (isVisible(draw_y, 30, y, panel_height)) {
-        if (drawDropdown(r, ui, x, draw_y + 10, 80, 18, kit.fx2_assign.toString(), "FX2 Assign")) {
-            kit.fx2_assign = @enumFromInt((@intFromEnum(kit.fx2_assign) + 1) % 16);
-        }
-    }
+    // draw_y = y + content_y - scroll_offset;
+    // if (isVisible(draw_y, 30, y, panel_height)) {
+    //     if (drawDropdown(r, ui, x, draw_y + 10, 80, 18, kit.fx2_assign.toString(), "FX2 Assign")) {
+    //         kit.fx2_assign = @enumFromInt((@intFromEnum(kit.fx2_assign) + 1) % 16);
+    //     }
+    // }
     // content_y tracking ends here - used for scroll bounds calculation
 }
 
