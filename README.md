@@ -2,7 +2,7 @@
 
 A fast, native configuration editor for the Roland SPD-SX sampling pad.
 
-![Zig](https://img.shields.io/badge/Zig-0.12-orange)
+![Zig](https://img.shields.io/badge/Zig-0.15-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
