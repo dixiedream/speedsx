@@ -280,7 +280,40 @@ fn handleAudioFileDrop(app: *App, dropped_path: []const u8) void {
     const file_drop = &app.editor_ui.file_drop;
     const drop_x = file_drop.drop_x;
     const drop_y = file_drop.drop_y;
-    const filename = file_drop.getFilename();
+
+    // Get the base path for the SPD-SX configuration
+    const base_path = app.project.getFilePath();
+    if (base_path.len == 0) {
+        app.editor_ui.showError("No project path set - save project first");
+        return;
+    }
+
+    // Import the audio file (converts to 44.1kHz 16-bit and copies to WAVE/DATA)
+    const import_result = spdsx_io.importAudioFile(
+        app.allocator,
+        dropped_path,
+        base_path,
+        &app.project.sample_library,
+    );
+
+    if (!import_result.success) {
+        if (import_result.error_message) |msg| {
+            app.editor_ui.showError(msg);
+        } else {
+            app.editor_ui.showError("Failed to import audio file");
+        }
+        return;
+    }
+
+    // Get the sample that was just added
+    const sample_idx = import_result.sample_index orelse {
+        app.editor_ui.showError("Failed to add to library");
+        return;
+    };
+
+    const sample = &app.project.sample_library.samples[sample_idx];
+    const sample_name = sample.getName();
+    const sample_path = sample.getPath();
 
     // Check if drop is over a pad
     const pad_drop_result = getPadAtPosition(&app.editor_ui, drop_x, drop_y);
@@ -289,29 +322,24 @@ fn handleAudioFileDrop(app: *App, dropped_path: []const u8) void {
         // Dropped directly on a pad - assign to that pad
         const pad = app.project.currentKit().getPad(pad_drop_result.pad_index);
 
-        // First add to sample library
-        _ = app.project.sample_library.addOrFind(filename, dropped_path);
-
-        // Then assign to pad (main or sub based on zone)
+        // Assign to pad (main or sub based on zone)
         if (pad_drop_result.is_sub_zone) {
-            pad.loadSubSample(filename, dropped_path);
-            app.editor_ui.showSuccess("Sub sample loaded to pad");
+            pad.loadSubSample(sample_name, sample_path);
+            app.editor_ui.showSuccess("Sample imported and assigned to sub");
         } else {
-            pad.loadSample(filename, dropped_path);
-            app.editor_ui.showSuccess("Sample loaded to pad");
+            pad.loadSample(sample_name, sample_path);
+            app.editor_ui.showSuccess("Sample imported and assigned to pad");
         }
 
         app.editor_ui.invalidateSampleUsageCache();
         app.editor_ui.selected_pad = pad_drop_result.pad_index;
     } else {
-        // Not on a pad - just add to sample library
-        if (app.project.sample_library.addOrFind(filename, dropped_path)) |idx| {
-            app.editor_ui.selected_wave = idx;
-            app.editor_ui.showSuccess("Sample imported to library");
-        } else {
-            app.editor_ui.showError("Sample library is full");
-        }
+        // Not on a pad - just imported to sample library
+        app.editor_ui.selected_wave = sample_idx;
+        app.editor_ui.showSuccess("Sample imported to library");
     }
+
+    app.editor_ui.invalidateSampleUsageCache();
 }
 
 /// Result of checking if mouse is over a pad
@@ -794,18 +822,41 @@ fn playSelectedSample(app: *App) void {
 /// Pad assignment is done separately via drag & drop from the wave list
 fn loadSelectedSample(app: *App) void {
     const file = app.editor_ui.getSelectedSampleFile() orelse return;
-    const file_name = file.getName();
     const file_path = file.getPath();
 
     if (file_path.len == 0) return;
 
-    // Add to sample library only - pad assignment is a separate action
-    const wave_idx = app.project.sample_library.addOrFind(file_name, file_path);
+    // Get the base path for the SPD-SX configuration
+    const base_path = app.project.getFilePath();
+    if (base_path.len == 0) {
+        app.editor_ui.showError("No project path set - save project first");
+        return;
+    }
+
+    // Import the audio file (converts to 44.1kHz 16-bit and copies to WAVE/DATA)
+    const import_result = spdsx_io.importAudioFile(
+        app.allocator,
+        file_path,
+        base_path,
+        &app.project.sample_library,
+    );
+
+    if (!import_result.success) {
+        if (import_result.error_message) |msg| {
+            app.editor_ui.showError(msg);
+        } else {
+            app.editor_ui.showError("Failed to import audio file");
+        }
+        return;
+    }
 
     // Select the newly added wave in the wave list
-    if (wave_idx) |idx| {
+    if (import_result.sample_index) |idx| {
         app.editor_ui.selected_wave = idx;
+        app.editor_ui.showSuccess("Sample imported to library");
     }
+
+    app.editor_ui.invalidateSampleUsageCache();
 
     // Close the browser
     app.editor_ui.closeSampleBrowser();

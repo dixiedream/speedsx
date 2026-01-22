@@ -786,6 +786,7 @@ pub fn createSpdSxStructure(base_path: []const u8) SpdSxError!void {
         "/SPD-SX/KIT",
         "/SPD-SX/WAVE",
         "/SPD-SX/WAVE/PRM",
+        "/SPD-SX/WAVE/DATA",
         "/SPD-SX/SYSTEM",
     };
 
@@ -793,6 +794,310 @@ pub fn createSpdSxStructure(base_path: []const u8) SpdSxError!void {
         const full_path = std.fmt.bufPrint(&buf, "{s}{s}", .{ base_path, dir }) catch continue;
         std.fs.cwd().makePath(full_path) catch continue;
     }
+
+    // Create wave data subdirectories (00-99)
+    for (0..100) |folder| {
+        const folder_path = std.fmt.bufPrint(&buf, "{s}/SPD-SX/WAVE/DATA/{d:0>2}", .{ base_path, folder }) catch continue;
+        std.fs.cwd().makePath(folder_path) catch continue;
+
+        const prm_folder = std.fmt.bufPrint(&buf, "{s}/SPD-SX/WAVE/PRM/{d:0>2}", .{ base_path, folder }) catch continue;
+        std.fs.cwd().makePath(prm_folder) catch continue;
+    }
+}
+
+/// Import result
+pub const ImportResult = struct {
+    success: bool = false,
+    relative_path: [256]u8 = [_]u8{0} ** 256,
+    relative_path_len: usize = 0,
+    sample_index: ?u16 = null,
+    error_message: ?[]const u8 = null,
+
+    pub fn getRelativePath(self: *const ImportResult) []const u8 {
+        return self.relative_path[0..self.relative_path_len];
+    }
+};
+
+/// Import an audio file into the SPD-SX structure
+/// Converts to 44.1kHz 16-bit WAV and copies to WAVE/DATA folder
+/// Uses CLI infrastructure for wave metadata
+pub fn importAudioFile(
+    allocator: Allocator,
+    source_path: []const u8,
+    base_path: []const u8,
+    library: *models.SampleLibrary,
+) ImportResult {
+    var result = ImportResult{};
+
+    // Get filename from source path
+    const filename = getFilenameFromPath(source_path);
+    if (filename.len == 0) {
+        result.error_message = "Invalid source path";
+        return result;
+    }
+
+    // Find next available wave slot
+    const wave_index = library.count;
+    if (wave_index >= models.SampleLibrary.MAX_SAMPLES) {
+        result.error_message = "Sample library is full";
+        return result;
+    }
+
+    // Calculate folder for the wave (XX/filename.wav)
+    const folder = wave_index / 100;
+
+    // Ensure destination directories exist
+    ensureWaveDirectories(base_path, folder);
+
+    // Create destination path: base_path/SPD-SX/WAVE/DATA/XX/filename.wav
+    var dest_path_buf: [512]u8 = undefined;
+    const dest_path = std.fmt.bufPrint(&dest_path_buf, "{s}/SPD-SX/WAVE/DATA/{d:0>2}/{s}", .{ base_path, folder, filename }) catch {
+        result.error_message = "Path too long";
+        return result;
+    };
+
+    // Convert and copy the audio file to 44.1kHz 16-bit stereo WAV
+    convertAndCopyAudio(allocator, source_path, dest_path) catch |err| {
+        result.error_message = switch (err) {
+            error.FileNotFound => "Source file not found",
+            error.OutOfMemory => "Out of memory",
+            error.InvalidFormat => "Invalid audio format",
+            error.ConversionFailed => "Audio conversion failed",
+            error.WriteError => "Failed to write file",
+            error.PathTooLong => "Path too long",
+        };
+        return result;
+    };
+
+    // Build relative path for the wave .spd file (folder/filename.wav)
+    var rel_path_buf: [256]u8 = undefined;
+    const rel_path_len = (std.fmt.bufPrint(&rel_path_buf, "{d:0>2}/{s}", .{ folder, filename }) catch {
+        result.error_message = "Path too long";
+        return result;
+    }).len;
+
+    @memcpy(result.relative_path[0..rel_path_len], rel_path_buf[0..rel_path_len]);
+    result.relative_path_len = rel_path_len;
+
+    // Build full path for the UI sample library
+    var full_path_buf: [512]u8 = undefined;
+    const full_path = std.fmt.bufPrint(&full_path_buf, "{s}/SPD-SX/WAVE/DATA/{s}", .{ base_path, result.getRelativePath() }) catch {
+        result.error_message = "Path too long";
+        return result;
+    };
+
+    // Get wave name (filename without extension)
+    const wave_name = getFilenameWithoutExt(filename);
+
+    // Add to UI sample library - this will be written to .spd by saveConfiguration
+    if (library.count < models.SampleLibrary.MAX_SAMPLES) {
+        const idx = library.count;
+        library.samples[idx] = models.Sample.init();
+        library.samples[idx].setName(wave_name);
+        library.samples[idx].setPath(full_path);
+        library.samples[idx].sample_rate = 44100;
+        library.samples[idx].channels = 2;
+        library.count += 1;
+        result.sample_index = idx;
+
+        // Also write the wave .spd file immediately using CLI infrastructure
+        var cli_wave = cli_types.Wave.init();
+        cli_wave.wave_id = idx;
+        cli_wave.setName(wave_name);
+        cli_wave.setPath(result.getRelativePath()); // Store relative path
+
+        // Write the wave .spd parameter file
+        var prm_path_buf: [512]u8 = undefined;
+        const prm_path = std.fmt.bufPrint(&prm_path_buf, "{s}/SPD-SX/WAVE/PRM/{d:0>2}/{d:0>2}.spd", .{ base_path, folder, idx % 100 }) catch {
+            result.error_message = "Path too long";
+            return result;
+        };
+
+        cli_xml_writer.writeWaveFile(&cli_wave, prm_path) catch {
+            // Non-fatal - will be written on save anyway
+        };
+    }
+
+    result.success = true;
+    return result;
+}
+
+/// Ensure wave directories exist for a given folder index
+fn ensureWaveDirectories(base_path: []const u8, folder: u16) void {
+    var buf: [512]u8 = undefined;
+
+    // Create WAVE/DATA/XX directory
+    const data_dir = std.fmt.bufPrint(&buf, "{s}/SPD-SX/WAVE/DATA/{d:0>2}", .{ base_path, folder }) catch return;
+    std.fs.cwd().makePath(data_dir) catch {};
+
+    // Create WAVE/PRM/XX directory
+    const prm_dir = std.fmt.bufPrint(&buf, "{s}/SPD-SX/WAVE/PRM/{d:0>2}", .{ base_path, folder }) catch return;
+    std.fs.cwd().makePath(prm_dir) catch {};
+}
+
+/// Get filename from a path
+fn getFilenameFromPath(path: []const u8) []const u8 {
+    var i = path.len;
+    while (i > 0) {
+        i -= 1;
+        if (path[i] == '/' or path[i] == '\\') {
+            return path[i + 1 ..];
+        }
+    }
+    return path;
+}
+
+/// Get filename without extension
+fn getFilenameWithoutExt(filename: []const u8) []const u8 {
+    var i = filename.len;
+    while (i > 0) {
+        i -= 1;
+        if (filename[i] == '.') {
+            return filename[0..i];
+        }
+    }
+    return filename;
+}
+
+/// Convert audio file to 44.1kHz 16-bit stereo WAV and copy to destination
+fn convertAndCopyAudio(allocator: Allocator, source_path: []const u8, dest_path: []const u8) !void {
+    const sdl = @import("sdl.zig");
+    const c = sdl.c;
+
+    // Ensure source path is null-terminated
+    var src_path_buf: [512:0]u8 = undefined;
+    if (source_path.len >= src_path_buf.len) return error.PathTooLong;
+    @memcpy(src_path_buf[0..source_path.len], source_path);
+    src_path_buf[source_path.len] = 0;
+
+    // Load source audio file using SDL
+    const rw = c.SDL_RWFromFile(&src_path_buf, "rb");
+    if (rw == null) {
+        return error.FileNotFound;
+    }
+
+    var source_spec: c.SDL_AudioSpec = std.mem.zeroes(c.SDL_AudioSpec);
+    var audio_buf: [*c]u8 = undefined;
+    var audio_len: u32 = undefined;
+
+    const load_result = c.SDL_LoadWAV_RW(rw, 1, &source_spec, &audio_buf, &audio_len);
+    if (load_result == null) {
+        return error.InvalidFormat;
+    }
+    defer c.SDL_FreeWAV(audio_buf);
+
+    // Target format: 44100Hz, 16-bit signed little-endian, stereo
+    const target_freq: c_int = 44100;
+    const target_format: u16 = c.AUDIO_S16LSB;
+    const target_channels: u8 = 2;
+
+    // Check if conversion is needed
+    const needs_conversion = source_spec.freq != target_freq or
+        source_spec.format != target_format or
+        source_spec.channels != target_channels;
+
+    var final_data: []const u8 = undefined;
+    var final_len: u32 = undefined;
+    var converted_buf: ?[]u8 = null;
+
+    if (needs_conversion) {
+        // Build audio converter
+        var cvt: c.SDL_AudioCVT = undefined;
+        const build_result = c.SDL_BuildAudioCVT(
+            &cvt,
+            source_spec.format,
+            source_spec.channels,
+            source_spec.freq,
+            target_format,
+            target_channels,
+            target_freq,
+        );
+
+        if (build_result < 0) {
+            return error.ConversionFailed;
+        }
+
+        if (build_result == 0) {
+            // No conversion needed after all
+            final_data = audio_buf[0..audio_len];
+            final_len = audio_len;
+        } else {
+            // Allocate buffer for conversion
+            const needed_len: usize = @intCast(@as(u64, audio_len) * @as(u64, @intCast(cvt.len_mult)));
+            converted_buf = allocator.alloc(u8, needed_len) catch return error.OutOfMemory;
+
+            @memcpy(converted_buf.?[0..audio_len], audio_buf[0..audio_len]);
+
+            cvt.len = @intCast(audio_len);
+            cvt.buf = converted_buf.?.ptr;
+
+            if (c.SDL_ConvertAudio(&cvt) < 0) {
+                allocator.free(converted_buf.?);
+                return error.ConversionFailed;
+            }
+
+            final_data = converted_buf.?[0..@intCast(cvt.len_cvt)];
+            final_len = @intCast(cvt.len_cvt);
+        }
+    } else {
+        final_data = audio_buf[0..audio_len];
+        final_len = audio_len;
+    }
+    defer if (converted_buf) |buf| allocator.free(buf);
+
+    // Write WAV file
+    try writeWavFile(dest_path, final_data, final_len, target_freq, target_channels);
+}
+
+/// Write audio data as a WAV file (44.1kHz 16-bit stereo)
+fn writeWavFile(path: []const u8, data: []const u8, data_len: u32, sample_rate: c_int, channels: u8) !void {
+    const file = std.fs.cwd().createFile(path, .{}) catch return error.WriteError;
+    defer file.close();
+
+    // WAV header parameters
+    const bits_per_sample: u16 = 16;
+    const byte_rate: u32 = @intCast(@as(u64, @intCast(sample_rate)) * channels * (bits_per_sample / 8));
+    const block_align: u16 = channels * (bits_per_sample / 8);
+    const file_size: u32 = 36 + data_len;
+
+    // Build 44-byte WAV header
+    var header: [44]u8 = undefined;
+    var pos: usize = 0;
+
+    // RIFF header
+    @memcpy(header[pos..][0..4], "RIFF");
+    pos += 4;
+    std.mem.writeInt(u32, header[pos..][0..4], file_size, .little);
+    pos += 4;
+    @memcpy(header[pos..][0..4], "WAVE");
+    pos += 4;
+
+    // fmt chunk
+    @memcpy(header[pos..][0..4], "fmt ");
+    pos += 4;
+    std.mem.writeInt(u32, header[pos..][0..4], 16, .little); // Subchunk1Size
+    pos += 4;
+    std.mem.writeInt(u16, header[pos..][0..2], 1, .little); // AudioFormat (PCM)
+    pos += 2;
+    std.mem.writeInt(u16, header[pos..][0..2], channels, .little); // NumChannels
+    pos += 2;
+    std.mem.writeInt(u32, header[pos..][0..4], @intCast(sample_rate), .little); // SampleRate
+    pos += 4;
+    std.mem.writeInt(u32, header[pos..][0..4], byte_rate, .little); // ByteRate
+    pos += 4;
+    std.mem.writeInt(u16, header[pos..][0..2], block_align, .little); // BlockAlign
+    pos += 2;
+    std.mem.writeInt(u16, header[pos..][0..2], bits_per_sample, .little); // BitsPerSample
+    pos += 2;
+
+    // data chunk header
+    @memcpy(header[pos..][0..4], "data");
+    pos += 4;
+    std.mem.writeInt(u32, header[pos..][0..4], data_len, .little); // Subchunk2Size
+
+    // Write header and audio data
+    _ = file.write(&header) catch return error.WriteError;
+    _ = file.write(data) catch return error.WriteError;
 }
 
 // Tests
