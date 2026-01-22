@@ -3,7 +3,6 @@ const sdl = @import("sdl.zig");
 const c = sdl.c;
 const models = @import("models.zig");
 const ui = @import("ui.zig");
-const file_io = @import("file_io.zig");
 const spdsx_io = @import("spdsx_io.zig");
 const audio = @import("audio.zig");
 const user_config = @import("config.zig");

@@ -87,11 +87,6 @@ pub const Renderer = struct {
         }
     }
 
-    pub fn measureText(self: *Renderer, text: []const u8) i32 {
-        _ = self;
-        return font.textWidth(text) * 2;
-    }
-
     pub fn measureTextSmall(self: *Renderer, text: []const u8) i32 {
         _ = self;
         return font.textWidth(text);

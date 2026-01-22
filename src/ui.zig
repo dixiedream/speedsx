@@ -4,7 +4,6 @@ const std = @import("std");
 const sdl = @import("sdl.zig");
 const c = sdl.c;
 const models = @import("models.zig");
-const font = @import("font.zig");
 
 // Import from ui/ submodules
 pub const types = @import("ui/types.zig");

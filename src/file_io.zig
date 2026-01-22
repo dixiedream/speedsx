@@ -1,17 +1,5 @@
 const std = @import("std");
 
-/// Get filename from path
-pub fn getFilename(path: []const u8) []const u8 {
-    var i = path.len;
-    while (i > 0) {
-        i -= 1;
-        if (path[i] == '/' or path[i] == '\\') {
-            return path[i + 1 ..];
-        }
-    }
-    return path;
-}
-
 /// Check if a file is a supported audio format
 pub fn isSupportedAudio(path: []const u8) bool {
     // Check by extension suffix (case-insensitive)
@@ -31,13 +19,6 @@ pub fn isSupportedAudio(path: []const u8) bool {
 
 // Tests
 const testing = std.testing;
-
-test "getFilename" {
-    try testing.expectEqualStrings("file.wav", getFilename("/path/to/file.wav"));
-    try testing.expectEqualStrings("file.wav", getFilename("file.wav"));
-    try testing.expectEqualStrings("file.wav", getFilename("C:\\path\\to\\file.wav"));
-    try testing.expectEqualStrings("", getFilename(""));
-}
 
 test "isSupportedAudio" {
     try testing.expect(isSupportedAudio("test.wav"));

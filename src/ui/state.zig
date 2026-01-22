@@ -269,15 +269,6 @@ pub const EditorUI = struct {
         self.drag.drop_target_pad = 0;
     }
 
-    /// Complete drag operation and return if a drop occurred
-    pub fn endDrag(self: *EditorUI) bool {
-        const was_dragging = self.drag.is_dragging and self.drag.drop_target != .none;
-        if (!was_dragging) {
-            self.cancelDrag();
-        }
-        return was_dragging;
-    }
-
     /// Set drop target for current drag
     pub fn setDropTarget(self: *EditorUI, target: DropTarget, pad_index: u8) void {
         self.drag.drop_target = target;
@@ -487,11 +478,6 @@ pub const EditorUI = struct {
         self.sample_browser.file_count = 0;
         self.sample_browser.selected = 0;
         self.sample_browser.scroll = 0;
-    }
-
-    /// Add a file to sample browser list
-    pub fn addSampleBrowserFile(self: *EditorUI, name: []const u8, path: []const u8) bool {
-        return self.sample_browser.addFile(name, path);
     }
 
     /// Get selected sample file entry
