@@ -102,43 +102,6 @@ zig build run
 - Use **F3** to open the sample browser and scan a folder for audio files
 - Supported formats: WAV, AIFF (automatically converted to SPD-SX format)
 
-## Project Structure
-
-```
-src/
-├── main.zig          # Application entry point and event loop
-├── models.zig        # Data models (Kit, Pad, Sample, etc.)
-├── ui.zig            # UI module entry point
-├── ui/
-│   ├── types.zig     # UI type definitions and constants
-│   ├── state.zig     # Editor UI state management
-│   ├── renderer.zig  # SDL2 rendering with bitmap font
-│   ├── widgets.zig   # Reusable UI widgets
-│   └── drawing.zig   # Panel and modal drawing functions
-├── cli/
-│   ├── types.zig     # SPD-SX file format types
-│   ├── xml.zig       # XML parser for .spd files
-│   ├── xml_writer.zig# XML writer for .spd files
-│   ├── encoding.zig  # Text encoding utilities
-│   ├── paths.zig     # SPD-SX path conventions
-│   └── storage.zig   # Data storage structures
-├── spdsx_io.zig      # SPD-SX I/O integration layer
-├── audio.zig         # Audio playback via SDL2
-├── config.zig        # User configuration persistence
-├── font.zig          # Embedded bitmap font
-├── file_io.zig       # File utilities
-└── sdl.zig           # SDL2 C imports
-```
-
-## SPD-SX File Format
-
-SpeedSX reads and writes the native SPD-SX configuration format:
-
-- `SPD-SX/KIT/*.spd` - Kit configuration files (XML)
-- `SPD-SX/WAVE/PRM/*/*.spd` - Wave parameter files (XML)
-- `SPD-SX/WAVE/DATA/*/*.wav` - Audio sample files
-- `SPD-SX/SYSTEM/sysparam.spd` - System parameters including kit chains
-
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues and pull requests.
