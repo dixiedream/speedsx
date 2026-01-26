@@ -212,6 +212,7 @@ pub fn drawActionButtons(r: *Renderer, ui: *EditorUI, x: i32, y: i32, project: *
 
     if (drawButton(r, ui, btn_x, btn_y, btn_w, btn_h, "Delete Kit", !modal_blocking and project.kit_count > 1)) {
         _ = project.deleteKit(project.current_kit_index);
+        ui.invalidateSampleUsageCache();
     }
     btn_x += btn_w + gap;
 

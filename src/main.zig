@@ -330,7 +330,6 @@ fn handleAudioFileDrop(app: *App, dropped_path: []const u8) void {
             app.editor_ui.showSuccess("Sample imported and assigned to pad");
         }
 
-        app.editor_ui.invalidateSampleUsageCache();
         app.editor_ui.selected_pad = pad_drop_result.pad_index;
     } else {
         // Not on a pad - just imported to sample library
