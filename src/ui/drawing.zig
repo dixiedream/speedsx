@@ -1364,13 +1364,14 @@ pub fn applyStartupPathInput(ui: *EditorUI) void {
 }
 
 /// Draw license activation screen
-pub fn drawLicenseScreen(r: *Renderer, ui: *EditorUI, width: i32, height: i32, license_status: []const u8, is_licensed: bool) types.LicenseAction {
+pub fn drawLicenseScreen(r: *Renderer, ui: *EditorUI, width: i32, height: i32, is_licensed: bool) types.LicenseAction {
     var action = types.LicenseAction.none;
 
     r.fillRect(0, 0, width, height, Colors.background);
 
     const dialog_w: i32 = 520;
-    const dialog_h: i32 = 380;
+    // const dialog_h: i32 = 380;
+    const dialog_h: i32 = 200;
     const x = @divFloor(width - dialog_w, 2);
     const y = @divFloor(height - dialog_h, 2);
 
@@ -1385,39 +1386,12 @@ pub fn drawLicenseScreen(r: *Renderer, ui: *EditorUI, width: i32, height: i32, l
 
     if (is_licensed) {
         // Already licensed - show status and option to deactivate
-        r.drawText("License Status: ACTIVE", x + 20, y + 90, 0xFF40E040);
-        r.drawTextSmall(license_status, x + 20, y + 115, Colors.text);
-
-        r.drawTextSmall("Your license is valid and this machine is activated.", x + 20, y + 150, Colors.text_dim);
-        r.drawTextSmall("You can use this software on up to 5 machines.", x + 20, y + 170, Colors.text_dim);
-
-        // Continue and Deactivate buttons
-        const btn_w: i32 = 140;
-        const btn_h: i32 = 32;
-        const btn_y = y + 220;
-        const btn_gap: i32 = 20;
-        const total_btn_w = btn_w * 2 + btn_gap;
-        const btn_start_x = x + @divFloor(dialog_w - total_btn_w, 2);
-
-        // Continue button (green)
-        const continue_x = btn_start_x;
-        const continue_hovered = ui.isHovered(continue_x, btn_y, btn_w, btn_h);
-        const continue_color: u32 = if (continue_hovered) 0xFF3A9A3A else 0xFF2A8A2A;
-        r.drawRoundedRect(continue_x, btn_y, btn_w, btn_h, continue_color, true);
-        r.drawRoundedRect(continue_x, btn_y, btn_w, btn_h, Colors.border, false);
-        r.drawText("Continue", continue_x + @divFloor(btn_w - 70, 2), btn_y + 8, Colors.text);
-
-        if (ui.isClicked(continue_x, btn_y, btn_w, btn_h)) {
-            action = .retry; // Signal to proceed
-        }
-
-        // Deactivate button
-        const deact_x = btn_start_x + btn_w + btn_gap;
-        if (drawButton(r, ui, deact_x, btn_y, btn_w, btn_h, "Deactivate", true)) {
-            action = .deactivate;
-        }
-
-        r.drawTextSmall("Press Enter to continue", x + 20, y + dialog_h - 30, Colors.text_dim);
+        // r.drawText("License Status: ACTIVE", x + 20, y + 90, 0xFF40E040);
+        // r.drawTextSmall(license_status, x + 20, y + 115, Colors.text);
+        //
+        // r.drawTextSmall("Your license is valid and this machine is activated.", x + 20, y + 150, Colors.text_dim);
+        // r.drawTextSmall("You can use this software on up to 5 machines.", x + 20, y + 170, Colors.text_dim);
+        action = .retry;
     } else {
         // Not licensed - show activation form
         r.drawTextSmall("Enter your license key to activate SpeedSX:", x + 20, y + 90, Colors.text);
@@ -1467,14 +1441,6 @@ pub fn drawLicenseScreen(r: *Renderer, ui: *EditorUI, width: i32, height: i32, l
         if (drawButton(r, ui, quit_x, btn_y, btn_w, btn_h, "Quit", true)) {
             action = .quit;
         }
-
-        // Help text
-        r.drawTextSmall("License Features:", x + 20, y + 270, Colors.text);
-        r.drawTextSmall("- Perpetual license (no expiration)", x + 20, y + 290, Colors.text_dim);
-        r.drawTextSmall("- Activate on up to 5 machines", x + 20, y + 305, Colors.text_dim);
-        r.drawTextSmall("- Offline validation support (7 day cache)", x + 20, y + 320, Colors.text_dim);
-
-        r.drawTextSmall("Press Enter to Activate", x + 20, y + dialog_h - 30, Colors.text_dim);
     }
 
     return action;

@@ -1059,9 +1059,8 @@ fn draw(app: *App, width: c_int, height: c_int) void {
 
     // Handle license screen
     if (app.editor_ui.isInLicense()) {
-        const license_status = app.license_manager.getStatus().getMessage();
         const is_licensed = app.license_manager.isLicensed();
-        const action = ui.drawLicenseScreen(r, &app.editor_ui, width, height, license_status, is_licensed);
+        const action = ui.drawLicenseScreen(r, &app.editor_ui, width, height, is_licensed);
         switch (action) {
             .activate => {
                 ui.applyLicenseKeyInput(&app.editor_ui);

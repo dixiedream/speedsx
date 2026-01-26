@@ -1,59 +1,28 @@
-/// Keygen.sh License Validation Client
-/// Implements perpetual license model with machine activation limit
-///
-/// Configuration:
-/// - License Type: Perpetual (no expiration)
-/// - Activation Limit: 5 machines per license
-/// - Offline Support: Cached license file for offline validation
-///
 const std = @import("std");
 const models = @import("models.zig");
 
-/// Keygen.sh server configuration
-/// Update these values to match your self-hosted Keygen CE instance
 pub const KeygenConfig = struct {
-    /// Your Keygen CE server URL (no trailing slash)
     pub const server_url: []const u8 = "https://license.example.com";
-
-    /// Your Keygen account ID
     pub const account_id: []const u8 = "YOUR_ACCOUNT_ID";
-
-    /// Product ID for this application
     pub const product_id: []const u8 = "YOUR_PRODUCT_ID";
-
-    /// License policy ID (perpetual with 5 machine limit)
     pub const policy_id: []const u8 = "YOUR_POLICY_ID";
-
-    /// Maximum machines per license
-    pub const max_machines: u8 = 5;
+    pub const max_machines: u8 = 2;
 
     /// License cache validity in seconds (for offline mode)
-    /// Default: 7 days
     pub const cache_validity_seconds: u64 = 7 * 24 * 60 * 60;
 
     /// Application version for validation
     pub const app_version: []const u8 = "1.0.0";
 };
 
-/// License status
 pub const LicenseStatus = enum {
-    /// No license configured
     not_configured,
-    /// License is valid and activated on this machine
     valid,
-    /// License key is valid but not activated on this machine
     not_activated,
-    /// License validation failed
     invalid,
-    /// Machine activation limit reached
     activation_limit_reached,
-    /// License has been suspended
     suspended,
-    /// License has expired (for time-limited licenses)
-    expired,
-    /// Network error during validation
     network_error,
-    /// Using cached license (offline mode)
     cached,
 
     pub fn isUsable(self: LicenseStatus) bool {
@@ -68,7 +37,6 @@ pub const LicenseStatus = enum {
             .invalid => "Invalid license key",
             .activation_limit_reached => "Machine activation limit reached (max 5)",
             .suspended => "License has been suspended",
-            .expired => "License has expired",
             .network_error => "Unable to connect to license server",
             .cached => "License valid (offline mode)",
         };
@@ -363,11 +331,6 @@ pub const LicenseManager = struct {
         if (std.mem.indexOf(u8, response, "SUSPENDED") != null) {
             self.last_error.set("License has been suspended");
             return .suspended;
-        }
-
-        if (std.mem.indexOf(u8, response, "EXPIRED") != null) {
-            self.last_error.set("License has expired");
-            return .expired;
         }
 
         if (std.mem.indexOf(u8, response, "TOO_MANY_MACHINES") != null or
