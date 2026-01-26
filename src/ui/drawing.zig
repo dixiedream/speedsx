@@ -207,6 +207,7 @@ pub fn drawActionButtons(r: *Renderer, ui: *EditorUI, x: i32, y: i32, project: *
     if (drawButton(r, ui, btn_x, btn_y, btn_w, btn_h, "Delete wav", !modal_blocking and project.sample_library.count > 0)) {
         result.delete_wave = true;
         result.wave_to_delete = ui.selected_wave;
+        ui.invalidateSampleUsageCache();
     }
     btn_x += btn_w + gap;
 
