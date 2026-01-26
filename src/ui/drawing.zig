@@ -1362,3 +1362,175 @@ pub fn applyStartupPathInput(ui: *EditorUI) void {
         ui.setStartupPath(text);
     }
 }
+
+/// Draw license activation screen
+pub fn drawLicenseScreen(r: *Renderer, ui: *EditorUI, width: i32, height: i32, license_status: []const u8, is_licensed: bool) types.LicenseAction {
+    var action = types.LicenseAction.none;
+
+    r.fillRect(0, 0, width, height, Colors.background);
+
+    const dialog_w: i32 = 520;
+    const dialog_h: i32 = 380;
+    const x = @divFloor(width - dialog_w, 2);
+    const y = @divFloor(height - dialog_h, 2);
+
+    // Dialog background
+    r.drawRoundedRect(x, y, dialog_w, dialog_h, Colors.panel, true);
+    r.drawRect(x, y, dialog_w, dialog_h, Colors.accent);
+    r.drawRect(x + 1, y + 1, dialog_w - 2, dialog_h - 2, Colors.accent);
+
+    // Title
+    r.drawTextLarge("SpeedSX", x + @divFloor(dialog_w, 2) - 42, y + 20, Colors.accent);
+    r.drawText("License Activation", x + @divFloor(dialog_w, 2) - 85, y + 50, Colors.text_dim);
+
+    if (is_licensed) {
+        // Already licensed - show status and option to deactivate
+        r.drawText("License Status: ACTIVE", x + 20, y + 90, 0xFF40E040);
+        r.drawTextSmall(license_status, x + 20, y + 115, Colors.text);
+
+        r.drawTextSmall("Your license is valid and this machine is activated.", x + 20, y + 150, Colors.text_dim);
+        r.drawTextSmall("You can use this software on up to 5 machines.", x + 20, y + 170, Colors.text_dim);
+
+        // Continue and Deactivate buttons
+        const btn_w: i32 = 140;
+        const btn_h: i32 = 32;
+        const btn_y = y + 220;
+        const btn_gap: i32 = 20;
+        const total_btn_w = btn_w * 2 + btn_gap;
+        const btn_start_x = x + @divFloor(dialog_w - total_btn_w, 2);
+
+        // Continue button (green)
+        const continue_x = btn_start_x;
+        const continue_hovered = ui.isHovered(continue_x, btn_y, btn_w, btn_h);
+        const continue_color: u32 = if (continue_hovered) 0xFF3A9A3A else 0xFF2A8A2A;
+        r.drawRoundedRect(continue_x, btn_y, btn_w, btn_h, continue_color, true);
+        r.drawRoundedRect(continue_x, btn_y, btn_w, btn_h, Colors.border, false);
+        r.drawText("Continue", continue_x + @divFloor(btn_w - 70, 2), btn_y + 8, Colors.text);
+
+        if (ui.isClicked(continue_x, btn_y, btn_w, btn_h)) {
+            action = .retry; // Signal to proceed
+        }
+
+        // Deactivate button
+        const deact_x = btn_start_x + btn_w + btn_gap;
+        if (drawButton(r, ui, deact_x, btn_y, btn_w, btn_h, "Deactivate", true)) {
+            action = .deactivate;
+        }
+
+        r.drawTextSmall("Press Enter to continue", x + 20, y + dialog_h - 30, Colors.text_dim);
+    } else {
+        // Not licensed - show activation form
+        r.drawTextSmall("Enter your license key to activate SpeedSX:", x + 20, y + 90, Colors.text);
+
+        const input_x = x + 20;
+        const input_y = y + 120;
+        const input_w = dialog_w - 40;
+        const input_h: i32 = 28;
+
+        const current_key = ui.getLicenseKeyInput();
+        _ = drawLicenseKeyInput(r, ui, input_x, input_y, input_w, input_h, current_key);
+
+        // Error message
+        const error_msg = ui.getLicenseError();
+        if (error_msg.len > 0) {
+            r.drawTextSmall(error_msg, x + 20, y + 160, 0xFFE04040);
+        }
+
+        // Status message
+        const status_msg = ui.getLicenseStatus();
+        if (status_msg.len > 0) {
+            r.drawTextSmall(status_msg, x + 20, y + 180, Colors.text_dim);
+        }
+
+        // Activate and Quit buttons
+        const btn_w: i32 = 140;
+        const btn_h: i32 = 32;
+        const btn_y = y + 210;
+        const btn_gap: i32 = 20;
+        const total_btn_w = btn_w * 2 + btn_gap;
+        const btn_start_x = x + @divFloor(dialog_w - total_btn_w, 2);
+
+        // Activate button (green)
+        const activate_x = btn_start_x;
+        const activate_hovered = ui.isHovered(activate_x, btn_y, btn_w, btn_h);
+        const activate_color: u32 = if (activate_hovered) 0xFF3A9A3A else 0xFF2A8A2A;
+        r.drawRoundedRect(activate_x, btn_y, btn_w, btn_h, activate_color, true);
+        r.drawRoundedRect(activate_x, btn_y, btn_w, btn_h, Colors.border, false);
+        r.drawText("Activate", activate_x + @divFloor(btn_w - 68, 2), btn_y + 8, Colors.text);
+
+        if (ui.isClicked(activate_x, btn_y, btn_w, btn_h)) {
+            action = .activate;
+        }
+
+        // Quit button
+        const quit_x = btn_start_x + btn_w + btn_gap;
+        if (drawButton(r, ui, quit_x, btn_y, btn_w, btn_h, "Quit", true)) {
+            action = .quit;
+        }
+
+        // Help text
+        r.drawTextSmall("License Features:", x + 20, y + 270, Colors.text);
+        r.drawTextSmall("- Perpetual license (no expiration)", x + 20, y + 290, Colors.text_dim);
+        r.drawTextSmall("- Activate on up to 5 machines", x + 20, y + 305, Colors.text_dim);
+        r.drawTextSmall("- Offline validation support (7 day cache)", x + 20, y + 320, Colors.text_dim);
+
+        r.drawTextSmall("Press Enter to Activate", x + 20, y + dialog_h - 30, Colors.text_dim);
+    }
+
+    return action;
+}
+
+fn drawLicenseKeyInput(r: *Renderer, ui: *EditorUI, x: i32, y: i32, w: i32, h: i32, current_value: []const u8) bool {
+    const field_id = TextFieldId.license_key;
+    const is_focused = ui.text_input.focused_field == field_id;
+    const hovered = ui.isHovered(x, y, w, h);
+
+    var bg_color = Colors.slider_bg;
+    var border_color = Colors.border;
+    if (is_focused) {
+        bg_color = Colors.panel_light;
+        border_color = Colors.accent;
+    } else if (hovered) {
+        bg_color = Colors.panel_light;
+    }
+
+    r.drawRoundedRect(x, y, w, h, bg_color, true);
+    r.drawRoundedRect(x, y, w, h, border_color, false);
+    if (is_focused) {
+        r.drawRect(x + 1, y + 1, w - 2, h - 2, border_color);
+    }
+
+    const display_text = if (is_focused) ui.getInputText() else current_value;
+    const max_chars: usize = @intCast(@divFloor(w - 16, 5));
+    const display_len = @min(display_text.len, max_chars);
+
+    const text_y = y + @divFloor(h - 6, 2);
+    if (display_text.len > 0) {
+        r.drawTextSmall(display_text[0..display_len], x + 8, text_y, Colors.text);
+    } else {
+        r.drawTextSmall("Enter license key here...", x + 8, text_y, Colors.text_dim);
+    }
+
+    if (is_focused and ui.text_input.cursor_blink < 0.5) {
+        const cursor_x = x + 8 + @as(i32, ui.text_input.cursor_pos) * 5;
+        r.fillRect(cursor_x, y + 4, 1, h - 8, Colors.text);
+    }
+
+    if (ui.isClicked(x, y, w, h)) {
+        ui.text_input.text_field_clicked_this_frame = true;
+        if (!is_focused) {
+            ui.startTextInput(field_id, current_value);
+        }
+        return false;
+    }
+
+    return false;
+}
+
+/// Apply license key input
+pub fn applyLicenseKeyInput(ui: *EditorUI) void {
+    if (ui.text_input.focused_field == .license_key) {
+        const text = ui.finishTextInput();
+        ui.setLicenseKey(text);
+    }
+}

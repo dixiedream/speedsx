@@ -90,6 +90,7 @@ pub const TextFieldId = enum {
     startup_path,
     sample_browser_path,
     kit_chain_name,
+    license_key,
 };
 
 /// Drag and drop types
@@ -107,6 +108,7 @@ pub const DropTarget = enum {
 
 /// Application state enum
 pub const AppState = enum {
+    license, // License activation screen
     startup, // Startup screen - choose configuration path
     editor, // Main editor view
 };
@@ -303,6 +305,51 @@ pub const StartupAction = enum {
     none,
     open_project, // User clicked Open - load from path
     new_project, // User clicked New Project - start fresh
+};
+
+/// License screen action
+pub const LicenseAction = enum {
+    none,
+    activate, // User clicked Activate
+    deactivate, // User clicked Deactivate
+    retry, // Retry validation
+    quit, // User wants to quit
+};
+
+/// License UI state
+pub const LicenseUIState = struct {
+    license_key: models.BoundedString(256) = .{},
+    error_message: models.BoundedString(256) = .{},
+    status_message: models.BoundedString(128) = .{},
+    is_activating: bool = false,
+
+    pub fn setLicenseKey(self: *LicenseUIState, key: []const u8) void {
+        self.license_key.set(key);
+    }
+
+    pub fn getLicenseKey(self: *const LicenseUIState) []const u8 {
+        return self.license_key.get();
+    }
+
+    pub fn setError(self: *LicenseUIState, msg: []const u8) void {
+        self.error_message.set(msg);
+    }
+
+    pub fn getError(self: *const LicenseUIState) []const u8 {
+        return self.error_message.get();
+    }
+
+    pub fn clearError(self: *LicenseUIState) void {
+        self.error_message.clear();
+    }
+
+    pub fn setStatus(self: *LicenseUIState, msg: []const u8) void {
+        self.status_message.set(msg);
+    }
+
+    pub fn getStatus(self: *const LicenseUIState) []const u8 {
+        return self.status_message.get();
+    }
 };
 
 /// Wave editor modal state

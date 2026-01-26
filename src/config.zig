@@ -1,5 +1,5 @@
 /// User configuration persistence
-/// Stores settings like last project path between sessions
+/// Stores settings like last project path and license data between sessions
 const std = @import("std");
 const models = @import("models.zig");
 
@@ -9,6 +9,7 @@ const CONFIG_FILENAME = "speedsx.conf";
 /// User configuration
 pub const UserConfig = struct {
     last_project_path: models.BoundedString(512) = .{},
+    license_key: models.BoundedString(256) = .{},
 
     pub fn getLastPath(self: *const UserConfig) []const u8 {
         return self.last_project_path.get();
@@ -16,6 +17,18 @@ pub const UserConfig = struct {
 
     pub fn setLastPath(self: *UserConfig, path: []const u8) void {
         self.last_project_path.set(path);
+    }
+
+    pub fn getLicenseKey(self: *const UserConfig) []const u8 {
+        return self.license_key.get();
+    }
+
+    pub fn setLicenseKey(self: *UserConfig, key: []const u8) void {
+        self.license_key.set(key);
+    }
+
+    pub fn hasLicenseKey(self: *const UserConfig) bool {
+        return !self.license_key.isEmpty();
     }
 };
 
@@ -61,7 +74,7 @@ pub fn load() UserConfig {
     defer file.close();
 
     // Read file contents
-    var content_buf: [1024]u8 = undefined;
+    var content_buf: [2048]u8 = undefined;
     const bytes_read = file.readAll(&content_buf) catch return user_cfg;
     const content = content_buf[0..bytes_read];
 
@@ -75,6 +88,8 @@ pub fn load() UserConfig {
 
             if (std.mem.eql(u8, key, "last_project_path")) {
                 user_cfg.last_project_path.set(value);
+            } else if (std.mem.eql(u8, key, "license_key")) {
+                user_cfg.license_key.set(value);
             }
         }
     }
@@ -92,19 +107,39 @@ pub fn save(user_cfg: *const UserConfig) void {
     const file = std.fs.cwd().createFile(config_path, .{}) catch return;
     defer file.close();
 
+    var write_buf: [1024]u8 = undefined;
+
     const last_path = user_cfg.getLastPath();
     if (last_path.len > 0) {
-        var write_buf: [600]u8 = undefined;
         const line = std.fmt.bufPrint(&write_buf, "last_project_path={s}\n", .{last_path}) catch return;
+        _ = file.writeAll(line) catch {};
+    }
+
+    const license_key = user_cfg.getLicenseKey();
+    if (license_key.len > 0) {
+        const line = std.fmt.bufPrint(&write_buf, "license_key={s}\n", .{license_key}) catch return;
         _ = file.writeAll(line) catch {};
     }
 }
 
 /// Save just the last project path (convenience function)
 pub fn saveLastPath(path: []const u8) void {
-    var config = UserConfig{};
+    var config = load(); // Load existing config first
     config.setLastPath(path);
     save(&config);
+}
+
+/// Save license key (convenience function)
+pub fn saveLicenseKey(key: []const u8) void {
+    var config = load(); // Load existing config first
+    config.setLicenseKey(key);
+    save(&config);
+}
+
+/// Get stored license key
+pub fn getLicenseKey() []const u8 {
+    const config = load();
+    return config.getLicenseKey();
 }
 
 // Tests

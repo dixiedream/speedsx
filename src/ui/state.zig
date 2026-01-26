@@ -17,13 +17,17 @@ const SampleBrowserState = types.SampleBrowserState;
 const SampleFileEntry = types.SampleFileEntry;
 const WaveEditorState = types.WaveEditorState;
 const FileDropState = types.FileDropState;
+const LicenseUIState = types.LicenseUIState;
 
 /// UI state for the editor
 pub const EditorUI = struct {
     // Application state
-    app_state: AppState = .startup,
+    app_state: AppState = .license,
     startup_path: models.BoundedString(256) = .{},
     startup_error: models.BoundedString(128) = .{},
+
+    // License UI state
+    license_ui: LicenseUIState = .{},
 
     // Status message (shown in status bar, auto-clears)
     status_message: models.BoundedString(128) = .{},
@@ -441,6 +445,51 @@ pub const EditorUI = struct {
     pub fn enterStartup(self: *EditorUI) void {
         self.app_state = .startup;
         self.clearStartupError();
+    }
+
+    /// Check if in license activation state
+    pub fn isInLicense(self: *const EditorUI) bool {
+        return self.app_state == .license;
+    }
+
+    /// Transition from license to startup state
+    pub fn exitLicense(self: *EditorUI) void {
+        self.app_state = .startup;
+    }
+
+    /// Set license key in UI
+    pub fn setLicenseKey(self: *EditorUI, key: []const u8) void {
+        self.license_ui.setLicenseKey(key);
+    }
+
+    /// Get license key from UI
+    pub fn getLicenseKeyInput(self: *const EditorUI) []const u8 {
+        return self.license_ui.getLicenseKey();
+    }
+
+    /// Set license error message
+    pub fn setLicenseError(self: *EditorUI, msg: []const u8) void {
+        self.license_ui.setError(msg);
+    }
+
+    /// Get license error message
+    pub fn getLicenseError(self: *const EditorUI) []const u8 {
+        return self.license_ui.getError();
+    }
+
+    /// Clear license error
+    pub fn clearLicenseError(self: *EditorUI) void {
+        self.license_ui.clearError();
+    }
+
+    /// Set license status message
+    pub fn setLicenseStatus(self: *EditorUI, msg: []const u8) void {
+        self.license_ui.setStatus(msg);
+    }
+
+    /// Get license status message
+    pub fn getLicenseStatus(self: *const EditorUI) []const u8 {
+        return self.license_ui.getStatus();
     }
 
     /// Check if any modal is blocking input

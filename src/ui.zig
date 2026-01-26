@@ -33,6 +33,8 @@ pub const ActionButtonsResult = types.ActionButtonsResult;
 pub const FileBarAction = types.FileBarAction;
 pub const StartupAction = types.StartupAction;
 pub const FileDropState = types.FileDropState;
+pub const LicenseAction = types.LicenseAction;
+pub const LicenseUIState = types.LicenseUIState;
 
 // Re-export Renderer and EditorUI
 pub const Renderer = renderer.Renderer;
@@ -776,3 +778,5 @@ pub const drawDragIndicator = drawing.drawDragIndicator;
 pub const applyDropFromLibrary = drawing.applyDropFromLibrary;
 pub const drawStartupScreen = drawing.drawStartupScreen;
 pub const applyStartupPathInput = drawing.applyStartupPathInput;
+pub const drawLicenseScreen = drawing.drawLicenseScreen;
+pub const applyLicenseKeyInput = drawing.applyLicenseKeyInput;

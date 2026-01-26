@@ -6,6 +6,7 @@ const ui = @import("ui.zig");
 const spdsx_io = @import("spdsx_io.zig");
 const audio = @import("audio.zig");
 const user_config = @import("config.zig");
+const license = @import("license.zig");
 
 const Config = struct {
     window_width: i32 = 1100,
@@ -24,9 +25,10 @@ const App = struct {
     allocator: std.mem.Allocator,
     audio_player: audio.AudioPlayer,
     current_sample: audio.AudioSample,
+    license_manager: license.LicenseManager,
 
     pub fn init(sdl_renderer: *c.SDL_Renderer, allocator: std.mem.Allocator) App {
-        return App{
+        var app = App{
             .project = models.Project.init(),
             .editor_ui = ui.EditorUI.init(),
             .midi_config = models.MidiConfig{},
@@ -37,13 +39,31 @@ const App = struct {
             .allocator = allocator,
             .audio_player = audio.AudioPlayer.init(allocator),
             .current_sample = audio.AudioSample{},
+            .license_manager = license.LicenseManager.init(allocator),
         };
+
+        // Check if already licensed (from cache)
+        if (app.license_manager.isLicensed()) {
+            app.editor_ui.app_state = .startup;
+            app.editor_ui.setLicenseStatus("License validated from cache");
+        } else {
+            app.editor_ui.app_state = .license;
+        }
+
+        // Load any stored license key
+        const saved_config = user_config.load();
+        if (saved_config.hasLicenseKey()) {
+            app.editor_ui.setLicenseKey(saved_config.getLicenseKey());
+        }
+
+        return app;
     }
 
     pub fn deinit(self: *App) void {
         self.audio_player.deinit();
         self.current_sample.deinit();
         self.renderer.deinit();
+        self.license_manager.deinit();
     }
 };
 
@@ -423,6 +443,12 @@ fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
     const mod = keysym.mod;
     const ctrl = (mod & c.KMOD_CTRL) != 0;
 
+    // Handle license screen keys
+    if (app.editor_ui.isInLicense()) {
+        handleLicenseKeyDown(app, keysym);
+        return;
+    }
+
     // Handle startup screen keys
     if (app.editor_ui.isInStartup()) {
         handleStartupKeyDown(app, keysym);
@@ -609,6 +635,59 @@ fn handleTextInput(app: *App, text: [*c]const u8) void {
     }
 }
 
+fn handleLicenseKeyDown(app: *App, keysym: c.SDL_Keysym) void {
+    // Handle text input for the license key field
+    if (app.editor_ui.isEditingText()) {
+        switch (keysym.sym) {
+            c.SDLK_ESCAPE => {
+                app.editor_ui.cancelTextInput();
+            },
+            c.SDLK_RETURN, c.SDLK_KP_ENTER => {
+                // Apply license key and try to activate
+                ui.applyLicenseKeyInput(&app.editor_ui);
+                tryActivateLicense(app);
+            },
+            c.SDLK_BACKSPACE => {
+                app.editor_ui.handleBackspace();
+            },
+            c.SDLK_DELETE => {
+                app.editor_ui.handleDelete();
+            },
+            c.SDLK_LEFT => {
+                app.editor_ui.moveCursorLeft();
+            },
+            c.SDLK_RIGHT => {
+                app.editor_ui.moveCursorRight();
+            },
+            c.SDLK_HOME => {
+                app.editor_ui.moveCursorHome();
+            },
+            c.SDLK_END => {
+                app.editor_ui.moveCursorEnd();
+            },
+            else => {},
+        }
+        return;
+    }
+
+    // Global license screen keys
+    switch (keysym.sym) {
+        c.SDLK_RETURN, c.SDLK_KP_ENTER => {
+            if (app.license_manager.isLicensed()) {
+                // Already licensed, proceed to startup
+                app.editor_ui.exitLicense();
+            } else {
+                tryActivateLicense(app);
+            }
+        },
+        c.SDLK_ESCAPE => {
+            // Quit application
+            app.running = false;
+        },
+        else => {},
+    }
+}
+
 fn handleStartupKeyDown(app: *App, keysym: c.SDL_Keysym) void {
     // Handle text input for the path field
     if (app.editor_ui.isEditingText()) {
@@ -654,6 +733,50 @@ fn handleStartupKeyDown(app: *App, keysym: c.SDL_Keysym) void {
             startNewProject(app);
         },
         else => {},
+    }
+}
+
+/// Try to activate the license
+fn tryActivateLicense(app: *App) void {
+    const license_key = app.editor_ui.getLicenseKeyInput();
+    if (license_key.len == 0) {
+        app.editor_ui.setLicenseError("Please enter a license key");
+        return;
+    }
+
+    app.editor_ui.clearLicenseError();
+    app.editor_ui.setLicenseStatus("Validating license...");
+
+    // Try to activate
+    const result = app.license_manager.activateLicense(license_key);
+
+    if (result.isUsable()) {
+        // Success! Save the license key and proceed
+        user_config.saveLicenseKey(license_key);
+        app.editor_ui.clearLicenseError();
+        app.editor_ui.setLicenseStatus("License activated successfully!");
+        app.editor_ui.exitLicense();
+    } else {
+        // Show error
+        const error_msg = app.license_manager.getLastError();
+        app.editor_ui.setLicenseError(error_msg);
+        app.editor_ui.setLicenseStatus("");
+    }
+}
+
+/// Deactivate the current machine
+fn deactivateLicense(app: *App) void {
+    app.editor_ui.setLicenseStatus("Deactivating...");
+
+    if (app.license_manager.deactivateMachine()) {
+        app.editor_ui.setLicenseStatus("Machine deactivated");
+        app.editor_ui.clearLicenseError();
+        // Clear saved license key
+        var cfg = user_config.load();
+        cfg.license_key.clear();
+        user_config.save(&cfg);
+    } else {
+        app.editor_ui.setLicenseError("Failed to deactivate machine");
     }
 }
 
@@ -933,6 +1056,32 @@ fn draw(app: *App, width: c_int, height: c_int) void {
     const r = &app.renderer;
 
     r.clear();
+
+    // Handle license screen
+    if (app.editor_ui.isInLicense()) {
+        const license_status = app.license_manager.getStatus().getMessage();
+        const is_licensed = app.license_manager.isLicensed();
+        const action = ui.drawLicenseScreen(r, &app.editor_ui, width, height, license_status, is_licensed);
+        switch (action) {
+            .activate => {
+                ui.applyLicenseKeyInput(&app.editor_ui);
+                tryActivateLicense(app);
+            },
+            .deactivate => {
+                deactivateLicense(app);
+            },
+            .retry => {
+                // Already licensed, proceed to startup
+                app.editor_ui.exitLicense();
+            },
+            .quit => {
+                app.running = false;
+            },
+            .none => {},
+        }
+        r.present();
+        return;
+    }
 
     // Handle startup screen
     if (app.editor_ui.isInStartup()) {
