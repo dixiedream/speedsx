@@ -534,17 +534,17 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     }
     content_y += 38;
 
-    // SubPad Volume
+    // Sub Volume
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 25, y, panel_height)) {
-        drawSlider(r, ui, x, draw_y + 10, panel_w - 50, 8, &pad.sub_volume, 0, 100, "SubPad Volume");
+        drawSlider(r, ui, x, draw_y + 10, panel_w - 50, 8, &pad.sub_volume, 0, 100, "Sub Volume");
     }
     content_y += 35;
 
-    // SubPan
+    // Sub
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 35, y, panel_height)) {
-        r.drawTextSmall("SubPan", x, draw_y, Colors.text_dim);
+        r.drawTextSmall("Sub Pan", x, draw_y, Colors.text_dim);
         const sub_pan_text = if (pad.sub_pan == 0) "CENTER" else if (pad.sub_pan < 0) "L" else "R";
         r.drawTextSmall(sub_pan_text, x + panel_w - 60, draw_y, Colors.text);
         drawSignedSlider(r, ui, x, draw_y + 10, panel_w - 50, 8, &pad.sub_pan, -64, 63, "");
