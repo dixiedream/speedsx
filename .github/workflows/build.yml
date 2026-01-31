@@ -43,6 +43,28 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      # ------------------------- # SDL2 for Linux (Ubuntu) # -------------------------
+      - name: Install SDL2 (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev
+
+      # ------------------------- # SDL2 for macOS # -------------------------
+      - name: Install SDL2 (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          brew update
+          brew install sdl2
+
+      # ------------------------- # SDL2 for Windows (MSYS2) # -------------------------
+      - name: Install SDL2 (Windows)
+        if: startsWith(matrix.os, 'windows')
+        run: |
+          choco install msys2 --no-progress
+          C:\tools\msys64\usr\bin\bash -lc "pacman -Sy --noconfirm mingw-w64-x86_64-SDL2"
+        shell: powershell
+
       - name: Install Zig
         uses: mlugg/setup-zig@v2
         with:
