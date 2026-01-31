@@ -25,7 +25,7 @@ jobs:
             zig_target: aarch64-linux-gnu
 
           # macOS Intel
-          - os: macos-13   # Intel runner
+          - os: macos-15-intel   # Intel runner
             arch: x86_64
             zig_target: x86_64-macos
 
