@@ -43,6 +43,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Cache Zig
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/zig
+            zig-cache
+            zig-out
+          key: zig-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('**/*.zig') }}
+          restore-keys: zig-${{ runner.os }}-${{ matrix.arch }}-
+
       # ------------------------- # SDL2 for Linux (Ubuntu) # -------------------------
       - name: Install SDL2 (Linux)
         if: startsWith(matrix.os, 'ubuntu')
@@ -51,6 +61,16 @@ jobs:
           sudo apt-get install -y libsdl2-dev
 
       # ------------------------- # SDL2 for macOS # -------------------------
+      - name: Cache Homebrew
+        if: startsWith(matrix.os, 'macos')
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/Library/Caches/Homebrew
+            /usr/local/Homebrew
+            /opt/homebrew
+          key: brew-${{ runner.os }}-${{ hashFiles('**/build.zig') }}
+
       - name: Install SDL2 (macOS)
         if: startsWith(matrix.os, 'macos')
         run: |
@@ -58,6 +78,13 @@ jobs:
           brew install sdl2
 
       # ------------------------- # SDL2 for Windows (MSYS2) # -------------------------
+      - name: Cache MSYS2
+        if: startsWith(matrix.os, 'windows')
+        uses: actions/cache@v5
+        with:
+          path: C:\tools\msys64\var\cache\pacman\pkg
+          key: msys2-${{ runner.os }}-${{ hashFiles('**/build.zig') }}
+
       - name: Install SDL2 (Windows)
         if: startsWith(matrix.os, 'windows')
         run: |
@@ -78,3 +105,20 @@ jobs:
         with:
           name: ${{ matrix.os }}-${{ matrix.arch }}
           path: zig-out/bin/
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
