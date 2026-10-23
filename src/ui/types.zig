@@ -165,6 +165,43 @@ pub const ScrollBounds = struct {
     h: i32 = 0,
 };
 
+/// Identifies which enum/bool field has its option list open
+pub const DropdownFieldId = enum {
+    none,
+    pad_link,
+    pad_link_target,
+    mute_group,
+    tempo_sync,
+    loop_mode,
+    trigger_mode,
+    dynamics,
+    poly_mono,
+    output_assign,
+    reverse,
+    midi_channel,
+    midi_ext_ctrl,
+    fx1_switch,
+    fx1_type,
+    fx2_switch,
+    fx2_type,
+};
+
+/// Open select-style dropdown popup (one at a time)
+pub const DropdownPopupState = struct {
+    open: bool = false,
+    field_id: DropdownFieldId = .none,
+    anchor_x: i32 = 0,
+    anchor_y: i32 = 0,
+    anchor_w: i32 = 0,
+    anchor_h: i32 = 0,
+    x: i32 = 0,
+    y: i32 = 0,
+    w: i32 = 0,
+    item_count: u8 = 0,
+    scroll: i32 = 0,
+    max_scroll: i32 = 0,
+};
+
 /// Context menu type
 pub const ContextMenuType = enum {
     none,

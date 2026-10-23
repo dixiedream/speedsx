@@ -12,6 +12,8 @@ const DragDropState = types.DragDropState;
 const ScrollState = types.ScrollState;
 const ScrollBounds = types.ScrollBounds;
 const ContextMenuState = types.ContextMenuState;
+const DropdownFieldId = types.DropdownFieldId;
+const DropdownPopupState = types.DropdownPopupState;
 const ClipboardState = types.ClipboardState;
 const SampleBrowserState = types.SampleBrowserState;
 const SampleFileEntry = types.SampleFileEntry;
@@ -56,6 +58,7 @@ pub const EditorUI = struct {
     drag: DragDropState = .{},
     scroll: ScrollState = .{},
     context_menu: ContextMenuState = .{},
+    dropdown_popup: DropdownPopupState = .{},
     clipboard: ClipboardState = .{},
     sample_browser: SampleBrowserState = .{},
     wave_editor: WaveEditorState = .{},
@@ -290,6 +293,18 @@ pub const EditorUI = struct {
     pub fn handleMouseWheel(self: *EditorUI, scroll_y: i32) void {
         const scroll_speed: i32 = 28; // 2 items per scroll tick (14px per item)
 
+        if (self.dropdown_popup.open) {
+            const item_h: i32 = 20;
+            const max_visible: i32 = 8;
+            const visible: i32 = @min(max_visible, @as(i32, @intCast(self.dropdown_popup.item_count)));
+            const popup_h = visible * item_h + 2;
+            if (self.isHovered(self.dropdown_popup.x, self.dropdown_popup.y, self.dropdown_popup.w, popup_h)) {
+                self.dropdown_popup.scroll -= scroll_y * item_h;
+                self.dropdown_popup.scroll = std.math.clamp(self.dropdown_popup.scroll, 0, self.dropdown_popup.max_scroll);
+                return;
+            }
+        }
+
         // If sample browser is open, handle its scrolling
         if (self.show_sample_browser and self.sample_browser.max_scroll > 0) {
             self.sample_browser.scroll -= scroll_y * scroll_speed;
@@ -326,7 +341,38 @@ pub const EditorUI = struct {
     }
 
     /// Open context menu for a pad at current mouse position
+    pub fn openDropdown(self: *EditorUI, field_id: DropdownFieldId, anchor_x: i32, anchor_y: i32, anchor_w: i32, anchor_h: i32, item_count: usize) void {
+        self.closeContextMenu();
+        const popup_w = @max(anchor_w, 140);
+        const item_h: i32 = 20;
+        const max_visible: i32 = 8;
+        const visible: i32 = @min(max_visible, @as(i32, @intCast(item_count)));
+        const popup_h = visible * item_h + 2;
+        const max_scroll = @as(i32, @intCast(item_count)) * item_h - popup_h + 2;
+        self.dropdown_popup = .{
+            .open = true,
+            .field_id = field_id,
+            .anchor_x = anchor_x,
+            .anchor_y = anchor_y,
+            .anchor_w = anchor_w,
+            .anchor_h = anchor_h,
+            .x = anchor_x,
+            .y = anchor_y + anchor_h,
+            .w = popup_w,
+            .item_count = @intCast(@min(item_count, 255)),
+            .scroll = 0,
+            .max_scroll = @max(0, max_scroll),
+        };
+    }
+
+    pub fn closeDropdown(self: *EditorUI) void {
+        self.dropdown_popup.open = false;
+        self.dropdown_popup.field_id = .none;
+        self.dropdown_popup.scroll = 0;
+    }
+
     pub fn openContextMenu(self: *EditorUI, pad_index: u8) void {
+        self.closeDropdown();
         self.context_menu.open = true;
         self.context_menu.menu_type = .pad;
         self.context_menu.x = self.input.mouse_x;
@@ -336,6 +382,7 @@ pub const EditorUI = struct {
 
     /// Open context menu for a wave at current mouse position
     pub fn openWaveContextMenu(self: *EditorUI, wave_index: u16) void {
+        self.closeDropdown();
         self.context_menu.open = true;
         self.context_menu.menu_type = .wave;
         self.context_menu.x = self.input.mouse_x;
@@ -445,7 +492,7 @@ pub const EditorUI = struct {
 
     /// Check if any modal is blocking input
     pub fn isModalOpen(self: *const EditorUI) bool {
-        return self.show_sample_browser or self.show_midi_config or self.show_settings or self.show_kit_chain or self.show_wave_editor or self.context_menu.open;
+        return self.show_sample_browser or self.show_midi_config or self.show_settings or self.show_kit_chain or self.show_wave_editor or self.context_menu.open or self.dropdown_popup.open;
     }
 
     /// Set sample browser path

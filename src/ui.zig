@@ -43,7 +43,10 @@ pub const drawButton = widgets.drawButton;
 pub const drawSlider = widgets.drawSlider;
 pub const drawSliderNoValue = widgets.drawSliderNoValue;
 pub const drawSignedSlider = widgets.drawSignedSlider;
-pub const drawDropdown = widgets.drawDropdown;
+pub const drawEnumDropdown = widgets.drawEnumDropdown;
+pub const drawBoolDropdown = widgets.drawBoolDropdown;
+pub const drawDropdownPopup = widgets.drawDropdownPopup;
+pub const DropdownFieldId = types.DropdownFieldId;
 pub const drawToggle = widgets.drawToggle;
 pub const lerpColor = widgets.lerpColor;
 pub const lightenColor = widgets.lightenColor;
@@ -378,12 +381,8 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     // Pad Link
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
-        if (drawDropdown(r, ui, x, draw_y + 10, 60, 18, kit.pad_link.toString(), "Pad Link")) {
-            kit.pad_link = @fromBackingInt(@intCast((@backingInt(kit.pad_link) + 1) % 16));
-        }
-        if (drawDropdown(r, ui, x + 70, draw_y + 10, 60, 18, kit.pad_link_target.toString(), "")) {
-            kit.pad_link_target = @fromBackingInt(@intCast((@backingInt(kit.pad_link_target) + 1) % 16));
-        }
+        drawEnumDropdown(models.PadLink, r, ui, .pad_link, x, draw_y + 10, 60, 18, &kit.pad_link, "Pad Link", models.PadLink.toString);
+        drawEnumDropdown(models.PadLink, r, ui, .pad_link_target, x + 70, draw_y + 10, 60, 18, &kit.pad_link_target, "", models.PadLink.toString);
     }
     content_y += 45;
 
@@ -429,18 +428,14 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     // Mute Group
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
-        if (drawDropdown(r, ui, x, draw_y + 10, 80, 18, pad.mute_group.toString(), "Mute Group")) {
-            pad.mute_group = @fromBackingInt(@intCast((@backingInt(pad.mute_group) + 1) % 10));
-        }
+        drawEnumDropdown(models.MuteGroup, r, ui, .mute_group, x, draw_y + 10, 80, 18, &pad.mute_group, "Mute Group", models.MuteGroup.toString);
     }
     content_y += 38;
 
     // TempoSync
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
-        if (drawDropdown(r, ui, x, draw_y + 10, 80, 18, pad.tempo_sync.toString(), "TempoSync")) {
-            pad.tempo_sync = @fromBackingInt(@intCast((@backingInt(pad.tempo_sync) + 1) % 2));
-        }
+        drawEnumDropdown(models.TempoSync, r, ui, .tempo_sync, x, draw_y + 10, 80, 18, &pad.tempo_sync, "TempoSync", models.TempoSync.toString);
     }
     content_y += 45;
 
@@ -460,55 +455,42 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     // Loop
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
-        if (drawDropdown(r, ui, x, draw_y + 10, 80, 18, pad.loop_mode.toString(), "Loop")) {
-            pad.loop_mode = @fromBackingInt(@intCast((@backingInt(pad.loop_mode) + 1) % 5));
-        }
+        drawEnumDropdown(models.LoopMode, r, ui, .loop_mode, x, draw_y + 10, 80, 18, &pad.loop_mode, "Loop", models.LoopMode.toString);
     }
     content_y += 38;
 
     // Trigger Type
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
-        if (drawDropdown(r, ui, x, draw_y + 10, 80, 18, pad.trigger_mode.toString(), "Trigger Type")) {
-            pad.trigger_mode = @fromBackingInt(@intCast((@backingInt(pad.trigger_mode) + 1) % 2));
-        }
+        drawEnumDropdown(models.TriggerMode, r, ui, .trigger_mode, x, draw_y + 10, 80, 18, &pad.trigger_mode, "Trigger Type", models.TriggerMode.toString);
     }
     content_y += 38;
 
     // Dynamics
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
-        if (drawDropdown(r, ui, x, draw_y + 10, 80, 18, pad.dynamics.toString(), "Dynamics")) {
-            pad.dynamics = @fromBackingInt(@intCast((@backingInt(pad.dynamics) + 1) % 2));
-        }
+        drawEnumDropdown(models.Dynamics, r, ui, .dynamics, x, draw_y + 10, 80, 18, &pad.dynamics, "Dynamics", models.Dynamics.toString);
     }
     content_y += 38;
 
     // PolyMono
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
-        if (drawDropdown(r, ui, x, draw_y + 10, 80, 18, pad.poly_mono.toString(), "PolyMono")) {
-            pad.poly_mono = @fromBackingInt(@intCast((@backingInt(pad.poly_mono) + 1) % 2));
-        }
+        drawEnumDropdown(models.PolyMono, r, ui, .poly_mono, x, draw_y + 10, 80, 18, &pad.poly_mono, "PolyMono", models.PolyMono.toString);
     }
     content_y += 38;
 
     // Output Assign
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
-        if (drawDropdown(r, ui, x, draw_y + 10, 100, 18, pad.output_assign.toString(), "Output Assign")) {
-            pad.output_assign = @fromBackingInt(@intCast((@backingInt(pad.output_assign) + 1) % 5));
-        }
+        drawEnumDropdown(models.OutputAssign, r, ui, .output_assign, x, draw_y + 10, 100, 18, &pad.output_assign, "Output Assign", models.OutputAssign.toString);
     }
     content_y += 38;
 
     // Reverse
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
-        const reverse_text = if (pad.reverse) "ON" else "OFF";
-        if (drawDropdown(r, ui, x, draw_y + 10, 60, 18, reverse_text, "Reverse")) {
-            pad.reverse = !pad.reverse;
-        }
+        drawBoolDropdown(r, ui, .reverse, x, draw_y + 10, 60, 18, &pad.reverse, "Reverse");
     }
     content_y += 45;
 
@@ -567,9 +549,7 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     // MIDI Channel (GLOBAL or 1-16)
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
-        if (drawDropdown(r, ui, x, draw_y + 10, 70, 18, pad.midi_channel.toString(), "Channel")) {
-            pad.midi_channel = @fromBackingInt(@intCast((@backingInt(pad.midi_channel) + 1) % 17));
-        }
+        drawEnumDropdown(models.Pad.MidiChannel, r, ui, .midi_channel, x, draw_y + 10, 70, 18, &pad.midi_channel, "Channel", models.Pad.MidiChannel.toString);
     }
     content_y += 38;
 
@@ -590,10 +570,7 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     // Ext Ctrl (OFF or ON)
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 25, y, panel_height)) {
-        const ext_label = if (pad.midi_ext_ctrl) "ON" else "OFF";
-        if (drawDropdown(r, ui, x, draw_y + 10, 50, 18, ext_label, "Ext Ctrl")) {
-            pad.midi_ext_ctrl = !pad.midi_ext_ctrl;
-        }
+        drawBoolDropdown(r, ui, .midi_ext_ctrl, x, draw_y + 10, 50, 18, &pad.midi_ext_ctrl, "Ext Ctrl");
     }
     content_y += 35;
 
@@ -631,38 +608,28 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     // FX1 Switch
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
-        const fx1_sw_text = if (kit.fx1_switch) "ON" else "OFF";
-        if (drawDropdown(r, ui, x, draw_y + 10, 50, 18, fx1_sw_text, "FX1")) {
-            kit.fx1_switch = !kit.fx1_switch;
-        }
+        drawBoolDropdown(r, ui, .fx1_switch, x, draw_y + 10, 50, 18, &kit.fx1_switch, "FX1");
     }
     content_y += 38;
 
     // FX1 Type
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
-        if (drawDropdown(r, ui, x, draw_y + 10, 120, 18, kit.fx1_type.toString(), "FX1 Type")) {
-            kit.fx1_type = @fromBackingInt(@intCast((@backingInt(kit.fx1_type) + 1) % 20));
-        }
+        drawEnumDropdown(models.FxType, r, ui, .fx1_type, x, draw_y + 10, 120, 18, &kit.fx1_type, "FX1 Type", models.FxType.toString);
     }
     content_y += 38;
 
     // FX2 Switch
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
-        const fx2_sw_text = if (kit.fx2_switch) "ON" else "OFF";
-        if (drawDropdown(r, ui, x, draw_y + 10, 50, 18, fx2_sw_text, "FX2")) {
-            kit.fx2_switch = !kit.fx2_switch;
-        }
+        drawBoolDropdown(r, ui, .fx2_switch, x, draw_y + 10, 50, 18, &kit.fx2_switch, "FX2");
     }
     content_y += 38;
 
     // FX2 Type
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
-        if (drawDropdown(r, ui, x, draw_y + 10, 100, 18, kit.fx2_type.toString(), "FX2 Type")) {
-            kit.fx2_type = @fromBackingInt(@intCast((@backingInt(kit.fx2_type) + 1) % 7));
-        }
+        drawEnumDropdown(models.FxType, r, ui, .fx2_type, x, draw_y + 10, 100, 18, &kit.fx2_type, "FX2 Type", models.FxType.toString);
     }
     content_y += 38;
 

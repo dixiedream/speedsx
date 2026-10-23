@@ -506,7 +506,9 @@ fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
 
     switch (keysym.sym) {
         c.SDLK_ESCAPE => {
-            if (app.editor_ui.context_menu.open) {
+            if (app.editor_ui.dropdown_popup.open) {
+                app.editor_ui.closeDropdown();
+            } else if (app.editor_ui.context_menu.open) {
                 app.editor_ui.closeContextMenu();
             } else if (app.editor_ui.show_sample_browser) {
                 app.editor_ui.closeSampleBrowser();
@@ -1079,8 +1081,13 @@ fn draw(app: *App, width: c_int, height: c_int) void {
         }
     }
 
+    // Value picker popups (pad/kit enum fields)
+    const kit = app.project.currentKit();
+    const pad = kit.getPad(app.editor_ui.selected_pad);
+    ui.drawDropdownPopup(r, &app.editor_ui, kit, pad);
+
     // Draw context menus (on top of most elements)
-    _ = ui.drawPadContextMenu(r, &app.editor_ui, app.project.currentKit());
+    _ = ui.drawPadContextMenu(r, &app.editor_ui, kit);
 
     // Wave context menu
     const wave_menu_action = ui.drawWaveContextMenu(r, &app.editor_ui, &app.project);

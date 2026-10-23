@@ -1,12 +1,195 @@
 /// Basic UI widgets - buttons, sliders, dropdowns, toggles
 const std = @import("std");
+const models = @import("../models.zig");
 const types = @import("types.zig");
 const renderer = @import("renderer.zig");
 const state = @import("state.zig");
 
 const Colors = types.Colors;
+const DropdownFieldId = types.DropdownFieldId;
 const Renderer = renderer.Renderer;
 const EditorUI = state.EditorUI;
+
+const item_h: i32 = 20;
+const max_visible_items: i32 = 8;
+
+fn drawDropdownTrigger(
+    r: *Renderer,
+    ui: *const EditorUI,
+    field_id: DropdownFieldId,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    current_text: []const u8,
+    label: []const u8,
+) void {
+    if (label.len > 0) {
+        r.drawTextSmall(label, x, y - 10, Colors.text_dim);
+    }
+
+    const is_open = ui.dropdown_popup.open and ui.dropdown_popup.field_id == field_id;
+    const hovered = ui.isHovered(x, y, w, h);
+    const bg_color = if (is_open or hovered) Colors.panel_light else Colors.panel;
+
+    r.drawRoundedRect(x, y, w, h, bg_color, true);
+    r.drawRoundedRect(x, y, w, h, if (is_open) Colors.accent else Colors.border, false);
+    r.drawTextSmall(current_text, x + 6, y + @divFloor(h - 6, 2), Colors.text);
+    r.drawTextSmall("v", x + w - 10, y + @divFloor(h - 6, 2), Colors.text_dim);
+}
+
+/// Enum field: click opens a scrollable list of all options
+pub fn drawEnumDropdown(
+    comptime Enum: type,
+    r: *Renderer,
+    ui: *EditorUI,
+    field_id: DropdownFieldId,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    value: *Enum,
+    label: []const u8,
+    comptime labelFn: fn (Enum) []const u8,
+) void {
+    drawDropdownTrigger(r, ui, field_id, x, y, w, h, labelFn(value.*), label);
+
+    if (ui.isClicked(x, y, w, h)) {
+        const values = std.enums.values(Enum);
+        if (ui.dropdown_popup.open and ui.dropdown_popup.field_id == field_id) {
+            ui.closeDropdown();
+        } else {
+            ui.openDropdown(field_id, x, y, w, h, values.len);
+        }
+    }
+}
+
+/// ON/OFF (or two-option) dropdown
+pub fn drawBoolDropdown(
+    r: *Renderer,
+    ui: *EditorUI,
+    field_id: DropdownFieldId,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    value: *bool,
+    label: []const u8,
+) void {
+    const current_text = if (value.*) "ON" else "OFF";
+    drawDropdownTrigger(r, ui, field_id, x, y, w, h, current_text, label);
+
+    if (ui.isClicked(x, y, w, h)) {
+        if (ui.dropdown_popup.open and ui.dropdown_popup.field_id == field_id) {
+            ui.closeDropdown();
+        } else {
+            ui.openDropdown(field_id, x, y, w, h, 2);
+        }
+    }
+}
+
+fn drawEnumPopupForField(
+    comptime Enum: type,
+    r: *Renderer,
+    ui: *EditorUI,
+    pop: *types.DropdownPopupState,
+    value: *Enum,
+    comptime labelFn: fn (Enum) []const u8,
+) void {
+    const values = std.enums.values(Enum);
+    const visible: i32 = @min(max_visible_items, @as(i32, @intCast(values.len)));
+    const popup_h = visible * item_h + 2;
+
+    r.fillRect(pop.x + 2, pop.y + 2, pop.w, popup_h, 0x80000000);
+    r.fillRect(pop.x, pop.y, pop.w, popup_h, Colors.panel);
+    r.drawRect(pop.x, pop.y, pop.w, popup_h, Colors.accent);
+
+    var i: usize = 0;
+    while (i < values.len) : (i += 1) {
+        const item_y = pop.y + 1 + @as(i32, @intCast(i)) * item_h - pop.scroll;
+        if (item_y + item_h < pop.y or item_y > pop.y + popup_h) continue;
+
+        const opt = values[i];
+        const hovered = ui.isHovered(pop.x, item_y, pop.w, item_h);
+        if (hovered) {
+            r.fillRect(pop.x + 1, item_y, pop.w - 2, item_h, Colors.accent_dark);
+        }
+        const text_color = if (opt == value.*) Colors.accent else Colors.text;
+        r.drawTextSmall(labelFn(opt), pop.x + 8, item_y + 5, text_color);
+
+        if (hovered and ui.input.mouse_clicked) {
+            value.* = opt;
+            ui.closeDropdown();
+            return;
+        }
+    }
+
+    if (ui.input.mouse_clicked) {
+        const over_popup = ui.isHovered(pop.x, pop.y, pop.w, popup_h);
+        const over_anchor = ui.isHovered(pop.anchor_x, pop.anchor_y, pop.anchor_w, pop.anchor_h);
+        if (!over_popup and !over_anchor) {
+            ui.closeDropdown();
+        }
+    }
+}
+
+fn drawBoolPopup(r: *Renderer, ui: *EditorUI, pop: *types.DropdownPopupState, value: *bool) void {
+    const popup_h = 2 * item_h + 2;
+    r.fillRect(pop.x + 2, pop.y + 2, pop.w, popup_h, 0x80000000);
+    r.fillRect(pop.x, pop.y, pop.w, popup_h, Colors.panel);
+    r.drawRect(pop.x, pop.y, pop.w, popup_h, Colors.accent);
+
+    const options = [_][]const u8{ "OFF", "ON" };
+    for (options, 0..) |text, idx| {
+        const item_y = pop.y + 1 + @as(i32, @intCast(idx)) * item_h;
+        const hovered = ui.isHovered(pop.x, item_y, pop.w, item_h);
+        if (hovered) {
+            r.fillRect(pop.x + 1, item_y, pop.w - 2, item_h, Colors.accent_dark);
+        }
+        const selected = (idx == 1) == value.*;
+        const text_color = if (selected) Colors.accent else Colors.text;
+        r.drawTextSmall(text, pop.x + 8, item_y + 5, text_color);
+        if (hovered and ui.input.mouse_clicked) {
+            value.* = idx == 1;
+            ui.closeDropdown();
+            return;
+        }
+    }
+
+    if (ui.input.mouse_clicked) {
+        const over_popup = ui.isHovered(pop.x, pop.y, pop.w, popup_h);
+        const over_anchor = ui.isHovered(pop.anchor_x, pop.anchor_y, pop.anchor_w, pop.anchor_h);
+        if (!over_popup and !over_anchor) {
+            ui.closeDropdown();
+        }
+    }
+}
+
+/// Draw the active option list on top of the UI; call once per frame after panels
+pub fn drawDropdownPopup(r: *Renderer, ui: *EditorUI, kit: *models.Kit, pad: *models.Pad) void {
+    if (!ui.dropdown_popup.open) return;
+    const pop = &ui.dropdown_popup;
+
+    switch (pop.field_id) {
+        .pad_link => drawEnumPopupForField(models.PadLink, r, ui, pop, &kit.pad_link, models.PadLink.toString),
+        .pad_link_target => drawEnumPopupForField(models.PadLink, r, ui, pop, &kit.pad_link_target, models.PadLink.toString),
+        .mute_group => drawEnumPopupForField(models.MuteGroup, r, ui, pop, &pad.mute_group, models.MuteGroup.toString),
+        .tempo_sync => drawEnumPopupForField(models.TempoSync, r, ui, pop, &pad.tempo_sync, models.TempoSync.toString),
+        .loop_mode => drawEnumPopupForField(models.LoopMode, r, ui, pop, &pad.loop_mode, models.LoopMode.toString),
+        .trigger_mode => drawEnumPopupForField(models.TriggerMode, r, ui, pop, &pad.trigger_mode, models.TriggerMode.toString),
+        .dynamics => drawEnumPopupForField(models.Dynamics, r, ui, pop, &pad.dynamics, models.Dynamics.toString),
+        .poly_mono => drawEnumPopupForField(models.PolyMono, r, ui, pop, &pad.poly_mono, models.PolyMono.toString),
+        .output_assign => drawEnumPopupForField(models.OutputAssign, r, ui, pop, &pad.output_assign, models.OutputAssign.toString),
+        .reverse => drawBoolPopup(r, ui, pop, &pad.reverse),
+        .midi_channel => drawEnumPopupForField(models.Pad.MidiChannel, r, ui, pop, &pad.midi_channel, models.Pad.MidiChannel.toString),
+        .midi_ext_ctrl => drawBoolPopup(r, ui, pop, &pad.midi_ext_ctrl),
+        .fx1_switch => drawBoolPopup(r, ui, pop, &kit.fx1_switch),
+        .fx1_type => drawEnumPopupForField(models.FxType, r, ui, pop, &kit.fx1_type, models.FxType.toString),
+        .fx2_switch => drawBoolPopup(r, ui, pop, &kit.fx2_switch),
+        .fx2_type => drawEnumPopupForField(models.FxType, r, ui, pop, &kit.fx2_type, models.FxType.toString),
+        .none => ui.closeDropdown(),
+    }
+}
 
 /// Draw a styled button
 pub fn drawButton(r: *Renderer, ui: *const EditorUI, x: i32, y: i32, w: i32, h: i32, text: []const u8, enabled: bool) bool {
@@ -107,21 +290,6 @@ pub fn drawSignedSlider(r: *Renderer, ui: *const EditorUI, x: i32, y: i32, w: i3
     var buf: [8]u8 = undefined;
     const val_str = std.fmt.bufPrint(&buf, "{d}", .{value.*}) catch "?";
     r.drawTextSmall(val_str, x + w + 8, y + 2, Colors.text);
-}
-
-/// Draw dropdown
-pub fn drawDropdown(r: *Renderer, ui: *const EditorUI, x: i32, y: i32, w: i32, h: i32, current_text: []const u8, label: []const u8) bool {
-    r.drawTextSmall(label, x, y - 10, Colors.text_dim);
-
-    const hovered = ui.isHovered(x, y, w, h);
-    const bg_color = if (hovered) Colors.panel_light else Colors.panel;
-
-    r.drawRoundedRect(x, y, w, h, bg_color, true);
-    r.drawRoundedRect(x, y, w, h, Colors.border, false);
-    r.drawTextSmall(current_text, x + 6, y + @divFloor(h - 6, 2), Colors.text);
-    r.drawTextSmall("v", x + w - 10, y + @divFloor(h - 6, 2), Colors.text_dim);
-
-    return ui.isClicked(x, y, w, h);
 }
 
 /// Draw toggle

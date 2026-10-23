@@ -14,7 +14,6 @@ const EditorUI = state.EditorUI;
 const drawButton = widgets.drawButton;
 const drawSlider = widgets.drawSlider;
 const drawSignedSlider = widgets.drawSignedSlider;
-const drawDropdown = widgets.drawDropdown;
 const drawToggle = widgets.drawToggle;
 const drawScrollbar = widgets.drawScrollbar;
 const drawGreenButton = widgets.drawGreenButton;
