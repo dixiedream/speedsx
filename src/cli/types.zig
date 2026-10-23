@@ -41,9 +41,9 @@ pub const Pad = struct {
 
     pub fn getPanText(pan_value: u8) []const u8 {
         const pan_texts = [_][]const u8{
-            "L15", "L14", "L13", "L12", "L11", "L10", "L9", "L8",
-            "L7",  "L6",  "L5",  "L4",  "L3",  "L2",  "L1", "CENTER",
-            "R1",  "R2",  "R3",  "R4",  "R5",  "R6",  "R7", "R8",
+            "L15", "L14", "L13", "L12", "L11", "L10", "L9",  "L8",
+            "L7",  "L6",  "L5",  "L4",  "L3",  "L2",  "L1",  "CENTER",
+            "R1",  "R2",  "R3",  "R4",  "R5",  "R6",  "R7",  "R8",
             "R9",  "R10", "R11", "R12", "R13", "R14", "R15",
         };
         if (pan_value <= 30) {
@@ -56,7 +56,7 @@ pub const Pad = struct {
         if (ch == -1) return "GLOBAL";
         if (ch >= 0 and ch < 16) {
             const ch_texts = [_][]const u8{
-                "1", "2", "3", "4", "5", "6", "7", "8",
+                "1", "2",  "3",  "4",  "5",  "6",  "7",  "8",
                 "9", "10", "11", "12", "13", "14", "15", "16",
             };
             return ch_texts[@intCast(ch)];
@@ -74,7 +74,7 @@ pub const Kit = struct {
     nm: [KIT_NAME_LENGTH]u8 = [_]u8{ 78, 101, 119, 32, 75, 105, 116, 0 }, // "New Kit"
 
     // Kit sub-name (16 characters)
-    sub_nm: [KIT_SUBNAME_LENGTH]u8 = [_]u8{0} ** KIT_SUBNAME_LENGTH,
+    sub_nm: [KIT_SUBNAME_LENGTH]u8 = @splat(0),
 
     // FX2 assignment
     fx2_asgn: u8 = 0,
@@ -86,15 +86,15 @@ pub const Kit = struct {
     // FX1 settings
     fx1_sw: u8 = 1,
     fx1_type: u8 = 0,
-    fx1_prm: [FX_PARAM_COUNT]u8 = [_]u8{0} ** FX_PARAM_COUNT,
+    fx1_prm: [FX_PARAM_COUNT]u8 = @splat(0),
 
     // FX2 settings
     fx2_sw: u8 = 1,
     fx2_type: u8 = 0,
-    fx2_prm: [FX_PARAM_COUNT]u8 = [_]u8{0} ** FX_PARAM_COUNT,
+    fx2_prm: [FX_PARAM_COUNT]u8 = @splat(0),
 
     // Pads
-    pads: [MAX_PADS]Pad = [_]Pad{Pad.init()} ** MAX_PADS,
+    pads: [MAX_PADS]Pad = @splat(Pad.init()),
 
     pub fn init() Kit {
         var kit = Kit{};
@@ -154,10 +154,10 @@ pub const Wave = struct {
     wave_id: u32 = 0,
 
     // Wave name (12 characters)
-    nm: [WAVE_NAME_LENGTH]u8 = [_]u8{0} ** WAVE_NAME_LENGTH,
+    nm: [WAVE_NAME_LENGTH]u8 = @splat(0),
 
     // File path
-    path: [256]u8 = [_]u8{0} ** 256,
+    path: [256]u8 = @splat(0),
     path_len: usize = 0,
 
     // Tag assignment
@@ -200,7 +200,7 @@ pub const Wave = struct {
 
 pub const TagListEntry = struct {
     // Tag name (12 characters)
-    nm: [TAG_NAME_LENGTH]u8 = [_]u8{0} ** TAG_NAME_LENGTH,
+    nm: [TAG_NAME_LENGTH]u8 = @splat(0),
 
     // Order
     order: u8 = 0,
@@ -223,10 +223,10 @@ pub const TagListEntry = struct {
 
 pub const KitChain = struct {
     // Chain name (10 characters)
-    nm: [KITCHAIN_NAME_LENGTH]u8 = [_]u8{0} ** KITCHAIN_NAME_LENGTH,
+    nm: [KITCHAIN_NAME_LENGTH]u8 = @splat(0),
 
     // Steps (kit indices, -1 for empty)
-    steps: [KITCHAIN_MAX_STEPS]i32 = [_]i32{-1} ** KITCHAIN_MAX_STEPS,
+    steps: [KITCHAIN_MAX_STEPS]i32 = @splat(-1),
 
     pub fn init() KitChain {
         return .{};

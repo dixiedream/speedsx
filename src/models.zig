@@ -7,7 +7,7 @@ pub fn BoundedString(comptime capacity: usize) type {
     return struct {
         const Self = @This();
 
-        data: [capacity]u8 = [_]u8{0} ** capacity,
+        data: [capacity]u8 = @splat(0),
         len: LenType = 0,
 
         /// Set the string content, truncating if too long
@@ -36,7 +36,6 @@ pub fn BoundedString(comptime capacity: usize) type {
         pub fn isEmpty(self: *const Self) bool {
             return self.len == 0;
         }
-
     };
 }
 
@@ -103,7 +102,6 @@ pub const LoopMode = enum(u8) {
     }
 };
 
-
 /// Tempo sync mode
 pub const TempoSync = enum(u8) {
     off = 0,
@@ -125,7 +123,7 @@ pub const TriggerMode = enum(u8) {
     pub fn toString(self: TriggerMode) []const u8 {
         return switch (self) {
             .shot => "SHOT",
-            .alt => "ALT"
+            .alt => "ALT",
         };
     }
 };
@@ -211,7 +209,7 @@ pub const PadLink = enum(u8) {
             .trig3 => "TRIG3",
             .trig4 => "TRIG4",
             .fs1 => "FS1",
-            .fs2 => "FS2"
+            .fs2 => "FS2",
         };
     }
 };
@@ -762,7 +760,7 @@ pub const Fx2Assign = enum(u8) {
 
 /// FX parameters (20 parameters per FX unit)
 pub const FxParams = struct {
-    params: [20]u8 = [_]u8{0} ** 20,
+    params: [20]u8 = @splat(0),
 
     pub fn init() FxParams {
         return FxParams{};
@@ -805,7 +803,7 @@ pub const MidiConfig = struct {
 /// Kit Chain - a sequence of kits that can be triggered in order
 pub const KitChain = struct {
     name: BoundedString(32) = .{},
-    steps: [MAX_STEPS]i16 = [_]i16{-1} ** MAX_STEPS, // Kit indices, -1 = empty
+    steps: [MAX_STEPS]i16 = @splat(-1), // Kit indices, -1 = empty
     step_count: u8 = 0,
 
     pub const MAX_STEPS = 20;

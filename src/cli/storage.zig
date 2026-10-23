@@ -13,7 +13,7 @@ pub const KitStorage = struct {
 
     pub fn init(allocator: Allocator) KitStorage {
         return .{
-            .kits = .{},
+            .kits = .empty,
             .allocator = allocator,
         };
     }
@@ -115,7 +115,7 @@ pub const WaveStorage = struct {
 
     pub fn init(allocator: Allocator) WaveStorage {
         return .{
-            .waves = .{},
+            .waves = .empty,
             .allocator = allocator,
         };
     }
@@ -180,7 +180,7 @@ pub const TagStorage = struct {
 
     pub fn init(allocator: Allocator) TagStorage {
         return .{
-            .tags = .{},
+            .tags = .empty,
             .allocator = allocator,
         };
     }
@@ -238,7 +238,7 @@ pub const KitChainStorage = struct {
 
     pub fn init(allocator: Allocator) KitChainStorage {
         return .{
-            .chains = .{},
+            .chains = .empty,
             .allocator = allocator,
         };
     }

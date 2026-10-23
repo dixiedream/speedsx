@@ -379,10 +379,10 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
         if (drawDropdown(r, ui, x, draw_y + 10, 60, 18, kit.pad_link.toString(), "Pad Link")) {
-            kit.pad_link = @enumFromInt((@intFromEnum(kit.pad_link) + 1) % 16);
+            kit.pad_link = @fromBackingInt(@intCast((@backingInt(kit.pad_link) + 1) % 16));
         }
         if (drawDropdown(r, ui, x + 70, draw_y + 10, 60, 18, kit.pad_link_target.toString(), "")) {
-            kit.pad_link_target = @enumFromInt((@intFromEnum(kit.pad_link_target) + 1) % 16);
+            kit.pad_link_target = @fromBackingInt(@intCast((@backingInt(kit.pad_link_target) + 1) % 16));
         }
     }
     content_y += 45;
@@ -430,7 +430,7 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
         if (drawDropdown(r, ui, x, draw_y + 10, 80, 18, pad.mute_group.toString(), "Mute Group")) {
-            pad.mute_group = @enumFromInt((@intFromEnum(pad.mute_group) + 1) % 10);
+            pad.mute_group = @fromBackingInt(@intCast((@backingInt(pad.mute_group) + 1) % 10));
         }
     }
     content_y += 38;
@@ -439,7 +439,7 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
         if (drawDropdown(r, ui, x, draw_y + 10, 80, 18, pad.tempo_sync.toString(), "TempoSync")) {
-            pad.tempo_sync = @enumFromInt((@intFromEnum(pad.tempo_sync) + 1) % 2);
+            pad.tempo_sync = @fromBackingInt(@intCast((@backingInt(pad.tempo_sync) + 1) % 2));
         }
     }
     content_y += 45;
@@ -461,7 +461,7 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
         if (drawDropdown(r, ui, x, draw_y + 10, 80, 18, pad.loop_mode.toString(), "Loop")) {
-            pad.loop_mode = @enumFromInt((@intFromEnum(pad.loop_mode) + 1) % 5);
+            pad.loop_mode = @fromBackingInt(@intCast((@backingInt(pad.loop_mode) + 1) % 5));
         }
     }
     content_y += 38;
@@ -470,7 +470,7 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
         if (drawDropdown(r, ui, x, draw_y + 10, 80, 18, pad.trigger_mode.toString(), "Trigger Type")) {
-            pad.trigger_mode = @enumFromInt((@intFromEnum(pad.trigger_mode) + 1) % 2);
+            pad.trigger_mode = @fromBackingInt(@intCast((@backingInt(pad.trigger_mode) + 1) % 2));
         }
     }
     content_y += 38;
@@ -479,7 +479,7 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
         if (drawDropdown(r, ui, x, draw_y + 10, 80, 18, pad.dynamics.toString(), "Dynamics")) {
-            pad.dynamics = @enumFromInt((@intFromEnum(pad.dynamics) + 1) % 2);
+            pad.dynamics = @fromBackingInt(@intCast((@backingInt(pad.dynamics) + 1) % 2));
         }
     }
     content_y += 38;
@@ -488,7 +488,7 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
         if (drawDropdown(r, ui, x, draw_y + 10, 80, 18, pad.poly_mono.toString(), "PolyMono")) {
-            pad.poly_mono = @enumFromInt((@intFromEnum(pad.poly_mono) + 1) % 2);
+            pad.poly_mono = @fromBackingInt(@intCast((@backingInt(pad.poly_mono) + 1) % 2));
         }
     }
     content_y += 38;
@@ -497,7 +497,7 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
         if (drawDropdown(r, ui, x, draw_y + 10, 100, 18, pad.output_assign.toString(), "Output Assign")) {
-            pad.output_assign = @enumFromInt((@intFromEnum(pad.output_assign) + 1) % 5);
+            pad.output_assign = @fromBackingInt(@intCast((@backingInt(pad.output_assign) + 1) % 5));
         }
     }
     content_y += 38;
@@ -568,7 +568,7 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
         if (drawDropdown(r, ui, x, draw_y + 10, 70, 18, pad.midi_channel.toString(), "Channel")) {
-            pad.midi_channel = @enumFromInt((@intFromEnum(pad.midi_channel) + 1) % 17);
+            pad.midi_channel = @fromBackingInt(@intCast((@backingInt(pad.midi_channel) + 1) % 17));
         }
     }
     content_y += 38;
@@ -642,7 +642,7 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
         if (drawDropdown(r, ui, x, draw_y + 10, 120, 18, kit.fx1_type.toString(), "FX1 Type")) {
-            kit.fx1_type = @enumFromInt((@intFromEnum(kit.fx1_type) + 1) % 20);
+            kit.fx1_type = @fromBackingInt(@intCast((@backingInt(kit.fx1_type) + 1) % 20));
         }
     }
     content_y += 38;
@@ -661,7 +661,7 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     draw_y = y + content_y - scroll_offset;
     if (isVisible(draw_y, 30, y, panel_height)) {
         if (drawDropdown(r, ui, x, draw_y + 10, 100, 18, kit.fx2_type.toString(), "FX2 Type")) {
-            kit.fx2_type = @enumFromInt((@intFromEnum(kit.fx2_type) + 1) % 7);
+            kit.fx2_type = @fromBackingInt(@intCast((@backingInt(kit.fx2_type) + 1) % 7));
         }
     }
     content_y += 38;

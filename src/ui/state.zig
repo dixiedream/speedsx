@@ -48,7 +48,7 @@ pub const EditorUI = struct {
     show_wave_editor: bool = false,
 
     // Pad animation
-    pad_flash: [15]f32 = [_]f32{0} ** 15,
+    pad_flash: [15]f32 = @splat(0),
 
     // Composed state components
     input: InputState = .{},
@@ -62,7 +62,7 @@ pub const EditorUI = struct {
     file_drop: FileDropState = .{},
 
     // Sample usage cache (avoids recalculating every frame)
-    sample_usage_cache: [models.SampleLibrary.MAX_SAMPLES]bool = [_]bool{false} ** models.SampleLibrary.MAX_SAMPLES,
+    sample_usage_cache: [models.SampleLibrary.MAX_SAMPLES]bool = @splat(false),
     sample_usage_dirty: bool = true,
 
     pub fn init() EditorUI {

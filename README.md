@@ -2,7 +2,7 @@
 
 A fast, native configuration editor for the Roland SPD-SX sampling pad.
 
-![Zig](https://img.shields.io/badge/Zig-0.15-orange)
+![Zig](https://img.shields.io/badge/Zig-0.17-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -24,7 +24,7 @@ SpeedSX provides a graphical interface for editing Roland SPD-SX configurations 
 
 ## Requirements
 
-- **Zig** 0.15 or later
+- **Zig** 0.17 or later
 - **SDL2** development libraries
 
 ### Installing SDL2
@@ -61,7 +61,7 @@ The executable will be in `zig-out/bin/speedsx`.
 
 ```bash
 # Release build (optimized)
-zig build -Doptimize=ReleaseFast
+zig build -Doptimize=fast
 
 # Run tests
 zig build test

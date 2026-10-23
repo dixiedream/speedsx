@@ -123,7 +123,7 @@ pub const InputState = struct {
 /// Text input/editing state
 pub const TextInputState = struct {
     focused_field: TextFieldId = .none,
-    input_buffer: [64]u8 = [_]u8{0} ** 64,
+    input_buffer: [64]u8 = @splat(0),
     input_len: u8 = 0,
     cursor_pos: u8 = 0,
     cursor_blink: f32 = 0,
@@ -134,7 +134,7 @@ pub const TextInputState = struct {
 pub const DragDropState = struct {
     drag_type: DragType = .none,
     drag_wave_index: u16 = 0,
-    drag_wave_name: [64]u8 = [_]u8{0} ** 64,
+    drag_wave_name: [64]u8 = @splat(0),
     drag_wave_name_len: u8 = 0,
     drag_start_x: i32 = 0,
     drag_start_y: i32 = 0,
@@ -264,9 +264,7 @@ pub const SampleBrowserState = struct {
 
         // Try to get home directory from environment
         // Linux/macOS: HOME, Windows: USERPROFILE
-        const home = std.posix.getenv("HOME") orelse
-            std.posix.getenv("USERPROFILE") orelse
-            "/";
+        const home = if (std.c.getenv("HOME")) |h| std.mem.span(h) else if (std.c.getenv("USERPROFILE")) |h| std.mem.span(h) else "/";
 
         self.path.set(home);
         self.path_initialized = true;
@@ -308,7 +306,7 @@ pub const StartupAction = enum {
 /// Wave editor modal state
 pub const WaveEditorState = struct {
     wave_index: u16 = 0, // Index in sample library
-    waveform_data: [512]i16 = [_]i16{0} ** 512, // Downsampled waveform for display
+    waveform_data: [512]i16 = @splat(0), // Downsampled waveform for display
     waveform_loaded: bool = false,
     total_samples: u32 = 0, // Total samples in the file
     sample_rate: u32 = 44100,
@@ -432,13 +430,12 @@ pub const FileDropState = struct {
     }
 
     /// Check if the dropped file is a directory (for configuration path)
-    pub fn isDirectory(self: *const FileDropState) bool {
+    pub fn isDirectory(self: *const FileDropState, io: std.Io) bool {
         const path = self.getPath();
         if (path.len == 0) return false;
 
-        // Try to open as directory
-        var dir = std.fs.cwd().openDir(path, .{}) catch return false;
-        dir.close();
+        var dir = std.Io.Dir.openDirAbsolute(io, path, .{}) catch return false;
+        dir.close(io);
         return true;
     }
 

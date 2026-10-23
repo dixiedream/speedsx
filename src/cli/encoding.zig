@@ -80,7 +80,7 @@ pub fn getCharFromCode(code: u8) u8 {
 
 /// Decode an array of ASCII codes to a string
 pub fn decodeString(codes: []const u8, allocator: Allocator) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     for (codes) |code| {
@@ -111,9 +111,9 @@ pub fn encodeString(str: []const u8, dest: []u8) void {
 /// Get pan text representation (L15 to R15, CENTER)
 pub fn getPanText(pan_value: u8) []const u8 {
     const pan_texts = [_][]const u8{
-        "L15", "L14", "L13", "L12", "L11", "L10", "L9", "L8",
-        "L7",  "L6",  "L5",  "L4",  "L3",  "L2",  "L1", "CENTER",
-        "R1",  "R2",  "R3",  "R4",  "R5",  "R6",  "R7", "R8",
+        "L15", "L14", "L13", "L12", "L11", "L10", "L9",  "L8",
+        "L7",  "L6",  "L5",  "L4",  "L3",  "L2",  "L1",  "CENTER",
+        "R1",  "R2",  "R3",  "R4",  "R5",  "R6",  "R7",  "R8",
         "R9",  "R10", "R11", "R12", "R13", "R14", "R15",
     };
     if (pan_value <= 30) {
@@ -125,9 +125,9 @@ pub fn getPanText(pan_value: u8) []const u8 {
 /// Get pan value from text
 pub fn getPanValue(text: []const u8) ?u8 {
     const pan_texts = [_][]const u8{
-        "L15", "L14", "L13", "L12", "L11", "L10", "L9", "L8",
-        "L7",  "L6",  "L5",  "L4",  "L3",  "L2",  "L1", "CENTER",
-        "R1",  "R2",  "R3",  "R4",  "R5",  "R6",  "R7", "R8",
+        "L15", "L14", "L13", "L12", "L11", "L10", "L9",  "L8",
+        "L7",  "L6",  "L5",  "L4",  "L3",  "L2",  "L1",  "CENTER",
+        "R1",  "R2",  "R3",  "R4",  "R5",  "R6",  "R7",  "R8",
         "R9",  "R10", "R11", "R12", "R13", "R14", "R15",
     };
     for (pan_texts, 0..) |t, i| {
@@ -170,7 +170,7 @@ pub fn formatTime(seconds: f64, buf: []u8) []const u8 {
 
 /// Remove whitespace from string
 pub fn removeWhitespace(str: []const u8, allocator: Allocator) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .{};
+    var result: std.ArrayListUnmanaged(u8) = .empty;
     errdefer result.deinit(allocator);
 
     for (str) |c| {
