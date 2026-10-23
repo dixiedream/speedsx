@@ -420,9 +420,28 @@ fn getPadAtPosition(editor_ui: *const ui.EditorUI, mouse_x: i32, mouse_y: i32) P
     return result;
 }
 
+fn copyTextInputToClipboard(app: *App) void {
+    const text = app.editor_ui.getTextInputCopyRange();
+    if (text.len == 0) return;
+
+    var buf: [64:0]u8 = undefined;
+    const len = @min(text.len, 63);
+    @memcpy(buf[0..len], text[0..len]);
+    buf[len] = 0;
+    _ = c.SDL_SetClipboardText(&buf);
+}
+
+fn pasteTextInputFromClipboard(app: *App) void {
+    const cb = c.SDL_GetClipboardText();
+    if (cb == null) return;
+    defer c.SDL_free(cb);
+    app.editor_ui.pasteTextInput(std.mem.span(cb));
+}
+
 fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
     const mod = keysym.mod;
     const ctrl = (mod & c.KMOD_CTRL) != 0;
+    const primary_mod = ctrl or (mod & c.KMOD_GUI) != 0;
 
     // Handle startup screen keys
     if (app.editor_ui.isInStartup()) {
@@ -446,6 +465,21 @@ fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
                 } else {
                     ui.applyTextInputToKit(&app.editor_ui, app.project.currentKit());
                 }
+            },
+            c.SDLK_a => {
+                if (primary_mod) app.editor_ui.selectAllTextInput();
+            },
+            c.SDLK_c => {
+                if (primary_mod) copyTextInputToClipboard(app);
+            },
+            c.SDLK_x => {
+                if (primary_mod) {
+                    copyTextInputToClipboard(app);
+                    app.editor_ui.cutTextInput();
+                }
+            },
+            c.SDLK_v => {
+                if (primary_mod) pasteTextInputFromClipboard(app);
             },
             c.SDLK_BACKSPACE => {
                 app.editor_ui.handleBackspace();
@@ -613,6 +647,9 @@ fn handleTextInput(app: *App, text: [*c]const u8) void {
 }
 
 fn handleStartupKeyDown(app: *App, keysym: c.SDL_Keysym) void {
+    const mod = keysym.mod;
+    const primary_mod = (mod & c.KMOD_CTRL) != 0 or (mod & c.KMOD_GUI) != 0;
+
     // Handle text input for the path field
     if (app.editor_ui.isEditingText()) {
         switch (keysym.sym) {
@@ -623,6 +660,21 @@ fn handleStartupKeyDown(app: *App, keysym: c.SDL_Keysym) void {
                 // Apply path input and try to open
                 ui.applyStartupPathInput(&app.editor_ui);
                 tryOpenProject(app);
+            },
+            c.SDLK_a => {
+                if (primary_mod) app.editor_ui.selectAllTextInput();
+            },
+            c.SDLK_c => {
+                if (primary_mod) copyTextInputToClipboard(app);
+            },
+            c.SDLK_x => {
+                if (primary_mod) {
+                    copyTextInputToClipboard(app);
+                    app.editor_ui.cutTextInput();
+                }
+            },
+            c.SDLK_v => {
+                if (primary_mod) pasteTextInputFromClipboard(app);
             },
             c.SDLK_BACKSPACE => {
                 app.editor_ui.handleBackspace();

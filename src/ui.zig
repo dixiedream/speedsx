@@ -672,10 +672,23 @@ pub fn drawTextInput(r: *Renderer, ui: *EditorUI, x: i32, y: i32, w: i32, h: i32
     const display_len = @min(display_text.len, max_chars);
 
     const text_y = y + @divFloor(h - 6, 2);
-    r.drawTextSmall(if (display_text.len > 0) display_text[0..display_len] else "", x + 4, text_y, Colors.text);
+    const text_x: i32 = x + 4;
+
+    if (is_focused and ui.text_input.has_selection) {
+        const sel_a = ui.text_input.selection_start;
+        const sel_b = ui.text_input.selection_end;
+        if (sel_a != sel_b) {
+            const sel_start: u8 = @min(sel_a, sel_b);
+            const sel_end: u8 = @max(sel_a, sel_b);
+            const sel_w: i32 = @as(i32, sel_end - sel_start) * 5;
+            r.fillRect(text_x + @as(i32, sel_start) * 5, y + 2, sel_w, h - 4, Colors.accent_dark);
+        }
+    }
+
+    r.drawTextSmall(if (display_text.len > 0) display_text[0..display_len] else "", text_x, text_y, Colors.text);
 
     if (is_focused and ui.text_input.cursor_blink < 0.5) {
-        const cursor_x = x + 4 + @as(i32, ui.text_input.cursor_pos) * 5;
+        const cursor_x = text_x + @as(i32, ui.text_input.cursor_pos) * 5;
         r.fillRect(cursor_x, y + 3, 1, h - 6, Colors.text);
     }
 

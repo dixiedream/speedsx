@@ -126,6 +126,9 @@ pub const TextInputState = struct {
     input_buffer: [64]u8 = @splat(0),
     input_len: u8 = 0,
     cursor_pos: u8 = 0,
+    selection_start: u8 = 0,
+    selection_end: u8 = 0,
+    has_selection: bool = false,
     cursor_blink: f32 = 0,
     text_field_clicked_this_frame: bool = false,
 };

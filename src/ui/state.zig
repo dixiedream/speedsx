@@ -105,6 +105,92 @@ pub const EditorUI = struct {
         return self.input.mouse_clicked and self.isHovered(x, y, w, h);
     }
 
+    fn clearTextSelection(self: *EditorUI) void {
+        self.text_input.has_selection = false;
+    }
+
+    fn textSelectionRange(self: *const EditorUI) ?struct { start: u8, end: u8 } {
+        if (!self.text_input.has_selection) return null;
+        const a = self.text_input.selection_start;
+        const b = self.text_input.selection_end;
+        if (a == b) return null;
+        return .{
+            .start = @min(a, b),
+            .end = @max(a, b),
+        };
+    }
+
+    fn deleteTextRange(self: *EditorUI, start: u8, end: u8) void {
+        const len = end - start;
+        var i = start;
+        while (i + len < self.text_input.input_len) : (i += 1) {
+            self.text_input.input_buffer[i] = self.text_input.input_buffer[i + len];
+        }
+        self.text_input.input_len -= len;
+        self.text_input.cursor_pos = start;
+        self.clearTextSelection();
+        self.text_input.cursor_blink = 0;
+    }
+
+    fn insertCharAtCursor(self: *EditorUI, char: u8) void {
+        if (self.text_input.input_len >= 63) return;
+
+        if (self.text_input.cursor_pos < self.text_input.input_len) {
+            var i: u8 = self.text_input.input_len;
+            while (i > self.text_input.cursor_pos) : (i -= 1) {
+                self.text_input.input_buffer[i] = self.text_input.input_buffer[i - 1];
+            }
+        }
+        self.text_input.input_buffer[self.text_input.cursor_pos] = char;
+        self.text_input.input_len += 1;
+        self.text_input.cursor_pos += 1;
+    }
+
+    /// Text to copy/cut: selection if any, otherwise the whole field
+    pub fn getTextInputCopyRange(self: *const EditorUI) []const u8 {
+        if (self.textSelectionRange()) |range| {
+            return self.text_input.input_buffer[range.start..range.end];
+        }
+        return self.getInputText();
+    }
+
+    pub fn selectAllTextInput(self: *EditorUI) void {
+        self.text_input.selection_start = 0;
+        self.text_input.selection_end = self.text_input.input_len;
+        self.text_input.has_selection = self.text_input.input_len > 0;
+        self.text_input.cursor_pos = self.text_input.input_len;
+        self.text_input.cursor_blink = 0;
+    }
+
+    pub fn deleteTextInputSelection(self: *EditorUI) void {
+        if (self.textSelectionRange()) |range| {
+            self.deleteTextRange(range.start, range.end);
+        }
+    }
+
+    pub fn cutTextInput(self: *EditorUI) void {
+        if (self.textSelectionRange()) |range| {
+            self.deleteTextRange(range.start, range.end);
+        } else if (self.text_input.input_len > 0) {
+            self.text_input.input_len = 0;
+            self.text_input.cursor_pos = 0;
+            self.clearTextSelection();
+            self.text_input.cursor_blink = 0;
+        }
+    }
+
+    pub fn pasteTextInput(self: *EditorUI, text: []const u8) void {
+        if (self.text_input.focused_field == .none) return;
+        self.deleteTextInputSelection();
+
+        for (text) |char| {
+            if (char < 32 or char > 126) continue;
+            if (self.text_input.input_len >= 63) break;
+            self.insertCharAtCursor(char);
+        }
+        self.text_input.cursor_blink = 0;
+    }
+
     /// Start editing a text field
     pub fn startTextInput(self: *EditorUI, field: TextFieldId, initial_text: []const u8) void {
         self.text_input.focused_field = field;
@@ -112,6 +198,7 @@ pub const EditorUI = struct {
         @memcpy(self.text_input.input_buffer[0..len], initial_text[0..len]);
         self.text_input.input_len = @intCast(len);
         self.text_input.cursor_pos = @intCast(len);
+        self.text_input.has_selection = false;
         self.text_input.cursor_blink = 0;
     }
 
@@ -127,6 +214,7 @@ pub const EditorUI = struct {
         self.text_input.focused_field = .none;
         self.text_input.input_len = 0;
         self.text_input.cursor_pos = 0;
+        self.clearTextSelection();
     }
 
     /// Get current input text
@@ -137,29 +225,22 @@ pub const EditorUI = struct {
     /// Handle a character input
     pub fn handleCharInput(self: *EditorUI, char: u8) void {
         if (self.text_input.focused_field == .none) return;
-        if (char < 32 or char > 126) return; // Only printable ASCII
-        if (self.text_input.input_len >= 63) return; // Buffer full
-
-        // Insert character at cursor position
-        if (self.text_input.cursor_pos < self.text_input.input_len) {
-            // Shift characters to the right
-            var i: u8 = self.text_input.input_len;
-            while (i > self.text_input.cursor_pos) : (i -= 1) {
-                self.text_input.input_buffer[i] = self.text_input.input_buffer[i - 1];
-            }
-        }
-        self.text_input.input_buffer[self.text_input.cursor_pos] = char;
-        self.text_input.input_len += 1;
-        self.text_input.cursor_pos += 1;
+        if (char < 32 or char > 126) return;
+        self.deleteTextInputSelection();
+        if (self.text_input.input_len >= 63) return;
+        self.insertCharAtCursor(char);
         self.text_input.cursor_blink = 0;
     }
 
     /// Handle backspace
     pub fn handleBackspace(self: *EditorUI) void {
         if (self.text_input.focused_field == .none) return;
+        if (self.textSelectionRange()) |range| {
+            self.deleteTextRange(range.start, range.end);
+            return;
+        }
         if (self.text_input.cursor_pos == 0) return;
 
-        // Remove character before cursor
         if (self.text_input.cursor_pos < self.text_input.input_len) {
             var i: u8 = self.text_input.cursor_pos - 1;
             while (i < self.text_input.input_len - 1) : (i += 1) {
@@ -174,9 +255,12 @@ pub const EditorUI = struct {
     /// Handle delete key
     pub fn handleDelete(self: *EditorUI) void {
         if (self.text_input.focused_field == .none) return;
+        if (self.textSelectionRange()) |range| {
+            self.deleteTextRange(range.start, range.end);
+            return;
+        }
         if (self.text_input.cursor_pos >= self.text_input.input_len) return;
 
-        // Remove character at cursor
         var i: u8 = self.text_input.cursor_pos;
         while (i < self.text_input.input_len - 1) : (i += 1) {
             self.text_input.input_buffer[i] = self.text_input.input_buffer[i + 1];
@@ -187,6 +271,7 @@ pub const EditorUI = struct {
 
     /// Move cursor left
     pub fn moveCursorLeft(self: *EditorUI) void {
+        self.clearTextSelection();
         if (self.text_input.cursor_pos > 0) {
             self.text_input.cursor_pos -= 1;
             self.text_input.cursor_blink = 0;
@@ -195,6 +280,7 @@ pub const EditorUI = struct {
 
     /// Move cursor right
     pub fn moveCursorRight(self: *EditorUI) void {
+        self.clearTextSelection();
         if (self.text_input.cursor_pos < self.text_input.input_len) {
             self.text_input.cursor_pos += 1;
             self.text_input.cursor_blink = 0;
@@ -203,12 +289,14 @@ pub const EditorUI = struct {
 
     /// Move cursor to start
     pub fn moveCursorHome(self: *EditorUI) void {
+        self.clearTextSelection();
         self.text_input.cursor_pos = 0;
         self.text_input.cursor_blink = 0;
     }
 
     /// Move cursor to end
     pub fn moveCursorEnd(self: *EditorUI) void {
+        self.clearTextSelection();
         self.text_input.cursor_pos = self.text_input.input_len;
         self.text_input.cursor_blink = 0;
     }
