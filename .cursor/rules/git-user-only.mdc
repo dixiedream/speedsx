@@ -1,0 +1,14 @@
+---
+description: User owns all git commits and pushes in this repo
+alwaysApply: true
+---
+
+# Git — user only
+
+Do **not** run `git commit`, `git push`, or any other command that creates or updates commits or remotes for this repository.
+
+- Implement code and workflow changes locally; leave changes unstaged or staged for the user to review.
+- Do not amend, rebase, merge, tag, or open PRs unless the user explicitly asks for that specific git/GitHub action.
+- If the task would normally end with “commit and push,” stop after the code changes and tell the user what to commit when they are ready.
+
+The user commits and pushes; that is not the agent’s job in this project.
