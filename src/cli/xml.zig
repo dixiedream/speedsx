@@ -234,7 +234,7 @@ fn readFileAlloc(allocator: Allocator, io: std.Io, file_path: []const u8, max: u
 
     var read_buf: [4096]u8 = undefined;
     var file_reader = file.reader(io, &read_buf);
-    return file_reader.interface.readAllocAll(allocator, max) catch error.ReadError;
+    return file_reader.interface.readAllocShort(allocator, max) catch error.ReadError;
 }
 
 /// Parse a .spd kit file

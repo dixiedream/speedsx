@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.2.0
+## v0.2.1
 - Build testing
 - Upgrade to Zig 0.17: translate-c package for SDL2 bindings, std.Io file I/O, and build system updates.
 
