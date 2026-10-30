@@ -1,9 +1,31 @@
 const std = @import("std");
 const Translator = @import("translate_c").Translator;
 
+fn linkSdl2MacOS(mod: *std.Build.Module) void {
+    const frameworks = [_][]const u8{
+        "CoreMedia",
+        "CoreVideo",
+        "Cocoa",
+        "IOKit",
+        "ForceFeedback",
+        "Carbon",
+        "GameController",
+        "CoreHaptics",
+        "Metal",
+        "QuartzCore",
+    };
+    for (frameworks) |name| {
+        mod.linkFramework(name, .{});
+    }
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    const sdl_pkg_config: std.Build.Module.LinkSystemLibraryOptions = .{
+        .use_pkg_config = if (target.result.os.tag == .macos) .yes else .force,
+    };
 
     const translate_c = b.dependency("translate_c", .{});
     const translator: Translator = .init(translate_c, .{
@@ -11,7 +33,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .link_system_libs = &.{
-            .{ .name = "SDL2", .options = .{ .use_pkg_config = .force } },
+            .{ .name = "SDL2", .options = sdl_pkg_config },
         },
     });
 
@@ -23,8 +45,11 @@ pub fn build(b: *std.Build) void {
             .{ .name = "c", .module = translator.mod },
         },
     });
-    root_module.linkSystemLibrary("SDL2", .{ .use_pkg_config = .force });
+    root_module.linkSystemLibrary("SDL2", sdl_pkg_config);
     root_module.link_libc = true;
+    if (target.result.os.tag == .macos) {
+        linkSdl2MacOS(root_module);
+    }
 
     const exe = b.addExecutable(.{
         .name = "speedsx",
