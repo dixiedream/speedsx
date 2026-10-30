@@ -2,14 +2,14 @@ name: Zig CI
 
 on:
   push:
-    branches: [main]
     tags: ["v*"]
   pull_request:
-  workflow_dispatch:
+    branches: [develop]
 
 jobs:
   build:
     name: Build (${{ matrix.asset_id }})
+    if: github.event_name == 'push' || startsWith(github.head_ref, 'feature/')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
 
