@@ -24,7 +24,10 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const sdl_pkg_config: std.Build.Module.LinkSystemLibraryOptions = .{
-        .use_pkg_config = if (target.result.os.tag == .macos) .yes else .force,
+        .use_pkg_config = switch (target.result.os.tag) {
+            .macos, .windows => .yes,
+            else => .force,
+        },
     };
 
     const translate_c = b.dependency("translate_c", .{});
@@ -55,6 +58,9 @@ pub fn build(b: *std.Build) void {
         .name = "speedsx",
         .root_module = root_module,
     });
+    if (target.result.os.tag == .windows) {
+        exe.subsystem = .windows;
+    }
 
     b.installArtifact(exe);
 
