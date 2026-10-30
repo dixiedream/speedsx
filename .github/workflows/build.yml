@@ -10,6 +10,7 @@ jobs:
   build:
     name: Build (${{ matrix.asset_id }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
 
     strategy:
       fail-fast: false
@@ -20,30 +21,35 @@ jobs:
             arch: x86_64
             zig_target: x86_64-linux-gnu
             asset_id: linux-x86_64
+            cross_target: false
 
-          # Linux ARM64 (native arm64 runner; cross-compiling on x86 breaks SDL2 headers for translate-c)
+          # Linux ARM64 (native arm64 runner)
           - os: ubuntu-24.04-arm
             arch: aarch64
             zig_target: aarch64-linux-gnu
             asset_id: linux-aarch64
+            cross_target: false
 
           # macOS Intel
           - os: macos-15-intel
             arch: x86_64
             zig_target: x86_64-macos
             asset_id: macos-x86_64
+            cross_target: false
 
           # macOS Apple Silicon
           - os: macos-latest
             arch: aarch64
             zig_target: aarch64-macos
             asset_id: macos-aarch64
+            cross_target: false
 
-          # Windows x86_64
+          # Windows x86_64 (MinGW; explicit target matches MSYS2 SDL2)
           - os: windows-latest
             arch: x86_64
             zig_target: x86_64-windows-gnu
             asset_id: windows-x86_64
+            cross_target: true
 
     steps:
       - name: Checkout repository
@@ -77,9 +83,7 @@ jobs:
 
       - name: Install SDL2 (macOS)
         if: startsWith(matrix.os, 'macos')
-        run: |
-          brew update
-          brew install sdl2
+        run: brew install sdl2
 
       - name: Cache MSYS2
         if: startsWith(matrix.os, 'windows')
@@ -92,7 +96,7 @@ jobs:
         if: startsWith(matrix.os, 'windows')
         run: |
           choco install msys2 --no-progress
-          C:\tools\msys64\usr\bin\bash -lc "pacman -Sy --noconfirm mingw-w64-x86_64-SDL2"
+          C:\tools\msys64\usr\bin\bash -lc "pacman -Sy --noconfirm mingw-w64-x86_64-SDL2 mingw-w64-x86_64-pkg-config"
         shell: powershell
 
       - name: Install Zig
@@ -102,12 +106,21 @@ jobs:
 
       - name: Build
         shell: bash
+        env:
+          PKG_CONFIG_PATH: ${{ matrix.cross_target && 'C:/tools/msys64/mingw64/lib/pkgconfig' || '' }}
         run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            export PATH="/c/tools/msys64/mingw64/bin:/c/tools/msys64/usr/bin:$PATH"
+          fi
           OPTS=()
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             OPTS+=(-Doptimize=ReleaseFast)
           fi
-          zig build -Dtarget=${{ matrix.zig_target }} "${OPTS[@]}"
+          TARGET_ARGS=()
+          if [[ "${{ matrix.cross_target }}" == "true" ]]; then
+            TARGET_ARGS=(-Dtarget=${{ matrix.zig_target }})
+          fi
+          zig build "${TARGET_ARGS[@]}" "${OPTS[@]}"
 
       - name: Package release asset (Unix)
         if: startsWith(github.ref, 'refs/tags/') && !startsWith(matrix.os, 'windows')

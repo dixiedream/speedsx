@@ -11,7 +11,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .link_system_libs = &.{
-            .{ .name = "SDL2" },
+            .{ .name = "SDL2", .options = .{ .use_pkg_config = .force } },
         },
     });
 
@@ -23,7 +23,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "c", .module = translator.mod },
         },
     });
-    root_module.linkSystemLibrary("SDL2", .{});
+    root_module.linkSystemLibrary("SDL2", .{ .use_pkg_config = .force });
     root_module.link_libc = true;
 
     const exe = b.addExecutable(.{
