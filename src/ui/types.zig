@@ -123,9 +123,12 @@ pub const InputState = struct {
 /// Text input/editing state
 pub const TextInputState = struct {
     focused_field: TextFieldId = .none,
-    input_buffer: [64]u8 = [_]u8{0} ** 64,
+    input_buffer: [64]u8 = @splat(0),
     input_len: u8 = 0,
     cursor_pos: u8 = 0,
+    selection_start: u8 = 0,
+    selection_end: u8 = 0,
+    has_selection: bool = false,
     cursor_blink: f32 = 0,
     text_field_clicked_this_frame: bool = false,
 };
@@ -134,7 +137,7 @@ pub const TextInputState = struct {
 pub const DragDropState = struct {
     drag_type: DragType = .none,
     drag_wave_index: u16 = 0,
-    drag_wave_name: [64]u8 = [_]u8{0} ** 64,
+    drag_wave_name: [64]u8 = @splat(0),
     drag_wave_name_len: u8 = 0,
     drag_start_x: i32 = 0,
     drag_start_y: i32 = 0,
@@ -163,6 +166,43 @@ pub const ScrollBounds = struct {
     y: i32 = 0,
     w: i32 = 0,
     h: i32 = 0,
+};
+
+/// Identifies which enum/bool field has its option list open
+pub const DropdownFieldId = enum {
+    none,
+    pad_link,
+    pad_link_target,
+    mute_group,
+    tempo_sync,
+    loop_mode,
+    trigger_mode,
+    dynamics,
+    poly_mono,
+    output_assign,
+    reverse,
+    midi_channel,
+    midi_ext_ctrl,
+    fx1_switch,
+    fx1_type,
+    fx2_switch,
+    fx2_type,
+};
+
+/// Open select-style dropdown popup (one at a time)
+pub const DropdownPopupState = struct {
+    open: bool = false,
+    field_id: DropdownFieldId = .none,
+    anchor_x: i32 = 0,
+    anchor_y: i32 = 0,
+    anchor_w: i32 = 0,
+    anchor_h: i32 = 0,
+    x: i32 = 0,
+    y: i32 = 0,
+    w: i32 = 0,
+    item_count: u8 = 0,
+    scroll: i32 = 0,
+    max_scroll: i32 = 0,
 };
 
 /// Context menu type
@@ -264,9 +304,7 @@ pub const SampleBrowserState = struct {
 
         // Try to get home directory from environment
         // Linux/macOS: HOME, Windows: USERPROFILE
-        const home = std.posix.getenv("HOME") orelse
-            std.posix.getenv("USERPROFILE") orelse
-            "/";
+        const home = if (std.c.getenv("HOME")) |h| std.mem.span(h) else if (std.c.getenv("USERPROFILE")) |h| std.mem.span(h) else "/";
 
         self.path.set(home);
         self.path_initialized = true;
@@ -308,7 +346,7 @@ pub const StartupAction = enum {
 /// Wave editor modal state
 pub const WaveEditorState = struct {
     wave_index: u16 = 0, // Index in sample library
-    waveform_data: [512]i16 = [_]i16{0} ** 512, // Downsampled waveform for display
+    waveform_data: [512]i16 = @splat(0), // Downsampled waveform for display
     waveform_loaded: bool = false,
     total_samples: u32 = 0, // Total samples in the file
     sample_rate: u32 = 44100,
@@ -432,13 +470,12 @@ pub const FileDropState = struct {
     }
 
     /// Check if the dropped file is a directory (for configuration path)
-    pub fn isDirectory(self: *const FileDropState) bool {
+    pub fn isDirectory(self: *const FileDropState, io: std.Io) bool {
         const path = self.getPath();
         if (path.len == 0) return false;
 
-        // Try to open as directory
-        var dir = std.fs.cwd().openDir(path, .{}) catch return false;
-        dir.close();
+        var dir = std.Io.Dir.openDirAbsolute(io, path, .{}) catch return false;
+        dir.close(io);
         return true;
     }
 

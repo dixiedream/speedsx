@@ -22,10 +22,11 @@ const App = struct {
     running: bool,
     last_time: u64,
     allocator: std.mem.Allocator,
+    io: std.Io,
     audio_player: audio.AudioPlayer,
     current_sample: audio.AudioSample,
 
-    pub fn init(sdl_renderer: *c.SDL_Renderer, allocator: std.mem.Allocator) App {
+    pub fn init(sdl_renderer: *c.SDL_Renderer, allocator: std.mem.Allocator, io: std.Io) App {
         return App{
             .project = models.Project.init(),
             .editor_ui = ui.EditorUI.init(),
@@ -35,6 +36,7 @@ const App = struct {
             .running = true,
             .last_time = @intCast(c.SDL_GetTicks64()),
             .allocator = allocator,
+            .io = io,
             .audio_player = audio.AudioPlayer.init(allocator),
             .current_sample = audio.AudioSample{},
         };
@@ -47,11 +49,9 @@ const App = struct {
     }
 };
 
-pub fn main() !void {
-    // Initialize allocator
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
+    const io = init.io;
 
     // Initialize SDL2 with video, events, and audio
     if (c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_EVENTS | c.SDL_INIT_AUDIO) != 0) {
@@ -90,11 +90,11 @@ pub fn main() !void {
     // Enable alpha blending
     _ = c.SDL_SetRenderDrawBlendMode(sdl_renderer, c.SDL_BLENDMODE_BLEND);
 
-    var app = App.init(sdl_renderer, allocator);
+    var app = App.init(sdl_renderer, allocator, io);
     defer app.deinit();
 
     // Load last used path from config, or use default
-    const saved_config = user_config.load();
+    const saved_config = user_config.load(io);
     const last_path = saved_config.getLastPath();
     if (last_path.len > 0) {
         app.editor_ui.setStartupPath(last_path);
@@ -224,7 +224,7 @@ fn handleFileDrop(app: *App) void {
 /// Handle file drop on startup screen
 fn handleStartupFileDrop(app: *App, dropped_path: []const u8) void {
     // Check if it's a directory
-    var dir = std.fs.cwd().openDir(dropped_path, .{}) catch {
+    var dir = std.Io.Dir.openDirAbsolute(app.io, dropped_path, .{}) catch {
         // Not a directory - might be a file, try to get parent
         if (std.mem.lastIndexOfScalar(u8, dropped_path, '/')) |idx| {
             const parent_path = dropped_path[0..idx];
@@ -235,7 +235,7 @@ fn handleStartupFileDrop(app: *App, dropped_path: []const u8) void {
         }
         return;
     };
-    dir.close();
+    dir.close(app.io);
 
     // It's a directory - set it as the startup path
     app.editor_ui.setStartupPath(dropped_path);
@@ -258,11 +258,11 @@ fn handleEditorFileDrop(app: *App, dropped_path: []const u8) void {
     }
 
     // Check if it's a directory
-    var dir = std.fs.cwd().openDir(dropped_path, .{}) catch {
+    var dir = std.Io.Dir.openDirAbsolute(app.io, dropped_path, .{}) catch {
         app.editor_ui.showError("Unsupported file type (use WAV/AIFF)");
         return;
     };
-    dir.close();
+    dir.close(app.io);
 
     // If sample browser is open, set as sample browser path
     if (app.editor_ui.show_sample_browser) {
@@ -290,6 +290,7 @@ fn handleAudioFileDrop(app: *App, dropped_path: []const u8) void {
     // Import the audio file (converts to 44.1kHz 16-bit and copies to WAVE/DATA)
     const import_result = spdsx_io.importAudioFile(
         app.allocator,
+        app.io,
         dropped_path,
         base_path,
         &app.project.sample_library,
@@ -419,9 +420,28 @@ fn getPadAtPosition(editor_ui: *const ui.EditorUI, mouse_x: i32, mouse_y: i32) P
     return result;
 }
 
+fn copyTextInputToClipboard(app: *App) void {
+    const text = app.editor_ui.getTextInputCopyRange();
+    if (text.len == 0) return;
+
+    var buf: [64:0]u8 = undefined;
+    const len = @min(text.len, 63);
+    @memcpy(buf[0..len], text[0..len]);
+    buf[len] = 0;
+    _ = c.SDL_SetClipboardText(&buf);
+}
+
+fn pasteTextInputFromClipboard(app: *App) void {
+    const cb = c.SDL_GetClipboardText();
+    if (cb == null) return;
+    defer c.SDL_free(cb);
+    app.editor_ui.pasteTextInput(std.mem.span(cb));
+}
+
 fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
     const mod = keysym.mod;
     const ctrl = (mod & c.KMOD_CTRL) != 0;
+    const primary_mod = ctrl or (mod & c.KMOD_GUI) != 0;
 
     // Handle startup screen keys
     if (app.editor_ui.isInStartup()) {
@@ -445,6 +465,21 @@ fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
                 } else {
                     ui.applyTextInputToKit(&app.editor_ui, app.project.currentKit());
                 }
+            },
+            c.SDLK_a => {
+                if (primary_mod) app.editor_ui.selectAllTextInput();
+            },
+            c.SDLK_c => {
+                if (primary_mod) copyTextInputToClipboard(app);
+            },
+            c.SDLK_x => {
+                if (primary_mod) {
+                    copyTextInputToClipboard(app);
+                    app.editor_ui.cutTextInput();
+                }
+            },
+            c.SDLK_v => {
+                if (primary_mod) pasteTextInputFromClipboard(app);
             },
             c.SDLK_BACKSPACE => {
                 app.editor_ui.handleBackspace();
@@ -505,7 +540,9 @@ fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
 
     switch (keysym.sym) {
         c.SDLK_ESCAPE => {
-            if (app.editor_ui.context_menu.open) {
+            if (app.editor_ui.dropdown_popup.open) {
+                app.editor_ui.closeDropdown();
+            } else if (app.editor_ui.context_menu.open) {
                 app.editor_ui.closeContextMenu();
             } else if (app.editor_ui.show_sample_browser) {
                 app.editor_ui.closeSampleBrowser();
@@ -610,6 +647,9 @@ fn handleTextInput(app: *App, text: [*c]const u8) void {
 }
 
 fn handleStartupKeyDown(app: *App, keysym: c.SDL_Keysym) void {
+    const mod = keysym.mod;
+    const primary_mod = (mod & c.KMOD_CTRL) != 0 or (mod & c.KMOD_GUI) != 0;
+
     // Handle text input for the path field
     if (app.editor_ui.isEditingText()) {
         switch (keysym.sym) {
@@ -620,6 +660,21 @@ fn handleStartupKeyDown(app: *App, keysym: c.SDL_Keysym) void {
                 // Apply path input and try to open
                 ui.applyStartupPathInput(&app.editor_ui);
                 tryOpenProject(app);
+            },
+            c.SDLK_a => {
+                if (primary_mod) app.editor_ui.selectAllTextInput();
+            },
+            c.SDLK_c => {
+                if (primary_mod) copyTextInputToClipboard(app);
+            },
+            c.SDLK_x => {
+                if (primary_mod) {
+                    copyTextInputToClipboard(app);
+                    app.editor_ui.cutTextInput();
+                }
+            },
+            c.SDLK_v => {
+                if (primary_mod) pasteTextInputFromClipboard(app);
             },
             c.SDLK_BACKSPACE => {
                 app.editor_ui.handleBackspace();
@@ -665,13 +720,13 @@ fn tryOpenProject(app: *App) void {
     }
 
     // Check if the path looks like a valid SPD-SX configuration path
-    if (spdsx_io.isValidSpdSxPath(path)) {
+    if (spdsx_io.isValidSpdSxPath(app.io, path)) {
         // Load from real SPD-SX format
-        if (spdsx_io.loadConfiguration(app.allocator, path)) |result| {
+        if (spdsx_io.loadConfiguration(app.allocator, app.io, path)) |result| {
             app.project = result.project;
             app.editor_ui.invalidateSampleUsageCache();
             app.editor_ui.enterEditor();
-            user_config.saveLastPath(path); // Remember this path for next startup
+            user_config.saveLastPath(app.io, path); // Remember this path for next startup
         } else |err| {
             switch (err) {
                 spdsx_io.SpdSxError.FileNotFound => {
@@ -705,8 +760,8 @@ fn saveProject(app: *App) void {
     const path = app.project.getFilePath();
 
     // If we have a valid path that looks like SPD-SX, save in SPD-SX format
-    if (path.len > 0 and spdsx_io.isValidSpdSxPath(path)) {
-        spdsx_io.saveConfiguration(app.allocator, &app.project, path) catch {
+    if (path.len > 0 and spdsx_io.isValidSpdSxPath(app.io, path)) {
+        spdsx_io.saveConfiguration(app.allocator, app.io, &app.project, path) catch {
             app.editor_ui.showError("Failed to save SPD-SX configuration");
             return;
         };
@@ -716,8 +771,8 @@ fn saveProject(app: *App) void {
 
     if (path.len > 0) {
         // Save to SPD-SX format at the specified path (creating structure if needed)
-        spdsx_io.createSpdSxStructure(path) catch {};
-        spdsx_io.saveConfiguration(app.allocator, &app.project, path) catch {
+        spdsx_io.createSpdSxStructure(app.io, path) catch {};
+        spdsx_io.saveConfiguration(app.allocator, app.io, &app.project, path) catch {
             app.editor_ui.showError("Failed to save project");
             return;
         };
@@ -737,8 +792,8 @@ fn loadProject(app: *App) void {
     }
 
     // If we have a valid SPD-SX path, load from that
-    if (spdsx_io.isValidSpdSxPath(path)) {
-        if (spdsx_io.loadConfiguration(app.allocator, path)) |result| {
+    if (spdsx_io.isValidSpdSxPath(app.io, path)) {
+        if (spdsx_io.loadConfiguration(app.allocator, app.io, path)) |result| {
             app.project = result.project;
             app.editor_ui.invalidateSampleUsageCache();
             app.editor_ui.showSuccess("Project reloaded");
@@ -765,7 +820,7 @@ fn scanSampleDirectory(app: *App) void {
 
     // Try to open and scan the directory
     var path_buf: [512]u8 = undefined;
-    var dir = std.fs.cwd().openDir(path, .{ .iterate = true }) catch |err| {
+    var dir = std.Io.Dir.openDirAbsolute(app.io, path, .{ .iterate = true, .access_sub_paths = true }) catch |err| {
         switch (err) {
             error.FileNotFound => app.editor_ui.setSampleBrowserError("Directory not found"),
             error.AccessDenied => app.editor_ui.setSampleBrowserError("Access denied"),
@@ -775,10 +830,10 @@ fn scanSampleDirectory(app: *App) void {
         app.editor_ui.sample_browser.scanning = false;
         return;
     };
-    defer dir.close();
+    defer dir.close(app.io);
 
     var iter = dir.iterate();
-    while (iter.next() catch null) |entry| {
+    while (iter.next(app.io) catch null) |entry| {
         if (entry.kind != .file) continue;
 
         // Check if it's a supported audio file
@@ -834,6 +889,7 @@ fn loadSelectedSample(app: *App) void {
     // Import the audio file (converts to 44.1kHz 16-bit and copies to WAVE/DATA)
     const import_result = spdsx_io.importAudioFile(
         app.allocator,
+        app.io,
         file_path,
         base_path,
         &app.project.sample_library,
@@ -898,7 +954,7 @@ fn deleteWave(app: *App, wave_index: u16) void {
 
     // Delete physical files (WAV and .spd parameter file)
     if (base_path.len > 0) {
-        spdsx_io.deleteWaveFiles(base_path, wave_index, sample_path);
+        spdsx_io.deleteWaveFiles(app.io, base_path, wave_index, sample_path);
     }
 
     // Remove from the in-memory sample library
@@ -1077,8 +1133,13 @@ fn draw(app: *App, width: c_int, height: c_int) void {
         }
     }
 
+    // Value picker popups (pad/kit enum fields)
+    const kit = app.project.currentKit();
+    const pad = kit.getPad(app.editor_ui.selected_pad);
+    ui.drawDropdownPopup(r, &app.editor_ui, kit, pad);
+
     // Draw context menus (on top of most elements)
-    _ = ui.drawPadContextMenu(r, &app.editor_ui, app.project.currentKit());
+    _ = ui.drawPadContextMenu(r, &app.editor_ui, kit);
 
     // Wave context menu
     const wave_menu_action = ui.drawWaveContextMenu(r, &app.editor_ui, &app.project);

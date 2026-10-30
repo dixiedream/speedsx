@@ -19,7 +19,7 @@ pub const XmlError = error{
     ParseIntError,
     FileNotFound,
     ReadError,
-} || Allocator.Error || std.fs.File.OpenError || std.fs.File.ReadError;
+} || Allocator.Error || std.Io.File.OpenError || std.Io.Reader.ReadAllocError;
 
 /// Simple XML element representation
 pub const XmlElement = struct {
@@ -32,7 +32,7 @@ pub const XmlElement = struct {
         return .{
             .name = name,
             .content = null,
-            .children = .{},
+            .children = .empty,
             .allocator = allocator,
         };
     }
@@ -225,15 +225,21 @@ fn getChildValue(element: *const XmlElement, name: []const u8, comptime T: type,
     return default;
 }
 
-/// Parse a .spd kit file
-pub fn parseKitFile(allocator: Allocator, file_path: []const u8) !Kit {
-    const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
+fn readFileAlloc(allocator: Allocator, io: std.Io, file_path: []const u8, max: usize) ![]u8 {
+    const file = std.Io.Dir.openFileAbsolute(io, file_path, .{}) catch |err| {
         if (err == error.FileNotFound) return error.FileNotFound;
         return error.ReadError;
     };
-    defer file.close();
+    defer file.close(io);
 
-    const content = file.readToEndAlloc(allocator, 1024 * 1024) catch return error.ReadError;
+    var read_buf: [4096]u8 = undefined;
+    var file_reader = file.reader(io, &read_buf);
+    return file_reader.interface.readAllocAll(allocator, max) catch error.ReadError;
+}
+
+/// Parse a .spd kit file
+pub fn parseKitFile(allocator: Allocator, io: std.Io, file_path: []const u8) !Kit {
+    const content = try readFileAlloc(allocator, io, file_path, 1024 * 1024);
     defer allocator.free(content);
 
     var parser = XmlParser.init(allocator, content);
@@ -371,14 +377,8 @@ fn parsePadElement(element: *const XmlElement) Pad {
 }
 
 /// Parse a .spd wave file
-pub fn parseWaveFile(allocator: Allocator, file_path: []const u8, wave_id: u32) !Wave {
-    const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
-        if (err == error.FileNotFound) return error.FileNotFound;
-        return error.ReadError;
-    };
-    defer file.close();
-
-    const content = file.readToEndAlloc(allocator, 1024 * 1024) catch return error.ReadError;
+pub fn parseWaveFile(allocator: Allocator, io: std.Io, file_path: []const u8, wave_id: u32) !Wave {
+    const content = try readFileAlloc(allocator, io, file_path, 1024 * 1024);
     defer allocator.free(content);
 
     var parser = XmlParser.init(allocator, content);
@@ -422,21 +422,15 @@ fn parseWaveElement(element: *const XmlElement, wave_id: u32) Wave {
 }
 
 /// Parse tag_list.spd file
-pub fn parseTagListFile(allocator: Allocator, file_path: []const u8) !std.ArrayListUnmanaged(TagListEntry) {
-    const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
-        if (err == error.FileNotFound) return error.FileNotFound;
-        return error.ReadError;
-    };
-    defer file.close();
-
-    const content = file.readToEndAlloc(allocator, 1024 * 1024) catch return error.ReadError;
+pub fn parseTagListFile(allocator: Allocator, io: std.Io, file_path: []const u8) !std.ArrayListUnmanaged(TagListEntry) {
+    const content = try readFileAlloc(allocator, io, file_path, 1024 * 1024);
     defer allocator.free(content);
 
     var parser = XmlParser.init(allocator, content);
     var root = try parser.parse() orelse return error.InvalidXml;
     defer root.deinit();
 
-    var tags: std.ArrayListUnmanaged(TagListEntry) = .{};
+    var tags: std.ArrayListUnmanaged(TagListEntry) = .empty;
     errdefer tags.deinit(allocator);
 
     for (root.children.items) |*child| {
@@ -465,14 +459,8 @@ pub fn parseTagListFile(allocator: Allocator, file_path: []const u8) !std.ArrayL
 }
 
 /// Parse kit chain from sysparam.spd
-pub fn parseKitChainFile(allocator: Allocator, file_path: []const u8) !std.ArrayListUnmanaged(KitChain) {
-    const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
-        if (err == error.FileNotFound) return error.FileNotFound;
-        return error.ReadError;
-    };
-    defer file.close();
-
-    const content = file.readToEndAlloc(allocator, 1024 * 1024) catch return error.ReadError;
+pub fn parseKitChainFile(allocator: Allocator, io: std.Io, file_path: []const u8) !std.ArrayListUnmanaged(KitChain) {
+    const content = try readFileAlloc(allocator, io, file_path, 1024 * 1024);
     defer allocator.free(content);
 
     // Wrap content in <sys> tags if not already present
@@ -486,7 +474,7 @@ pub fn parseKitChainFile(allocator: Allocator, file_path: []const u8) !std.Array
     var root = try parser.parse() orelse return error.InvalidXml;
     defer root.deinit();
 
-    var chains: std.ArrayListUnmanaged(KitChain) = .{};
+    var chains: std.ArrayListUnmanaged(KitChain) = .empty;
     errdefer chains.deinit(allocator);
 
     // Look for KitChainPrm > KitChain elements

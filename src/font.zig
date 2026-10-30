@@ -1,7 +1,6 @@
 /// Bitmap font data for UI rendering
 /// Simple 4x6 embedded font (ASCII 32-126)
 /// Each character is stored as 3 bytes (24 bits for 4x6 grid)
-
 pub const CHAR_WIDTH = 4;
 pub const CHAR_HEIGHT = 6;
 pub const CHAR_SPACING = 1;

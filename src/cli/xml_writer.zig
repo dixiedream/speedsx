@@ -13,19 +13,22 @@ const KitChain = types.KitChain;
 pub const WriteError = error{
     WriteError,
     CreateError,
-} || Allocator.Error || std.fs.File.OpenError || std.posix.WriteError;
+} || Allocator.Error || std.Io.File.OpenError || std.Io.Writer.Error;
 
 /// XML Writer helper
 pub const XmlWriter = struct {
-    file: std.fs.File,
+    io: std.Io,
+    file: std.Io.File,
+    write_buf: []u8,
     indent_level: usize = 0,
 
-    pub fn init(file: std.fs.File) XmlWriter {
-        return .{ .file = file };
+    pub fn init(io: std.Io, file: std.Io.File, write_buf: []u8) XmlWriter {
+        return .{ .io = io, .file = file, .write_buf = write_buf };
     }
 
     fn writeBytes(self: *XmlWriter, bytes: []const u8) !void {
-        _ = try std.posix.write(self.file.handle, bytes);
+        var file_writer = self.file.writer(self.io, self.write_buf);
+        try file_writer.interface.writeAll(bytes);
     }
 
     fn writeIndent(self: *XmlWriter) !void {
@@ -70,11 +73,12 @@ pub const XmlWriter = struct {
 };
 
 /// Write a kit to a .spd file
-pub fn writeKitFile(kit: *const Kit, file_path: []const u8) !void {
-    const file = try std.fs.cwd().createFile(file_path, .{});
-    defer file.close();
+pub fn writeKitFile(io: std.Io, kit: *const Kit, file_path: []const u8) !void {
+    const file = try std.Io.Dir.createFileAbsolute(io, file_path, .{});
+    defer file.close(io);
 
-    var writer = XmlWriter.init(file);
+    var write_buf: [4096]u8 = undefined;
+    var writer = XmlWriter.init(io, file, &write_buf);
     try writeKit(&writer, kit);
 }
 
@@ -203,11 +207,12 @@ fn writePad(writer: *XmlWriter, pad: *const Pad) !void {
 }
 
 /// Write a wave to a .spd file
-pub fn writeWaveFile(wave: *const Wave, file_path: []const u8) !void {
-    const file = try std.fs.cwd().createFile(file_path, .{});
-    defer file.close();
+pub fn writeWaveFile(io: std.Io, wave: *const Wave, file_path: []const u8) !void {
+    const file = try std.Io.Dir.createFileAbsolute(io, file_path, .{});
+    defer file.close(io);
 
-    var writer = XmlWriter.init(file);
+    var write_buf: [4096]u8 = undefined;
+    var writer = XmlWriter.init(io, file, &write_buf);
     try writeWave(&writer, wave);
 }
 
@@ -241,11 +246,12 @@ fn writeWave(writer: *XmlWriter, wave: *const Wave) !void {
 }
 
 /// Write tag list to tag_list.spd
-pub fn writeTagListFile(tags: []const TagListEntry, file_path: []const u8) !void {
-    const file = try std.fs.cwd().createFile(file_path, .{});
-    defer file.close();
+pub fn writeTagListFile(io: std.Io, tags: []const TagListEntry, file_path: []const u8) !void {
+    const file = try std.Io.Dir.createFileAbsolute(io, file_path, .{});
+    defer file.close(io);
 
-    var writer = XmlWriter.init(file);
+    var write_buf: [4096]u8 = undefined;
+    var writer = XmlWriter.init(io, file, &write_buf);
 
     try writer.openTag("TagList");
 
@@ -273,11 +279,12 @@ pub fn writeTagListFile(tags: []const TagListEntry, file_path: []const u8) !void
 }
 
 /// Write kit chains to sysparam.spd
-pub fn writeKitChainFile(chains: []const KitChain, file_path: []const u8) !void {
-    const file = try std.fs.cwd().createFile(file_path, .{});
-    defer file.close();
+pub fn writeKitChainFile(io: std.Io, chains: []const KitChain, file_path: []const u8) !void {
+    const file = try std.Io.Dir.createFileAbsolute(io, file_path, .{});
+    defer file.close(io);
 
-    var writer = XmlWriter.init(file);
+    var write_buf: [4096]u8 = undefined;
+    var writer = XmlWriter.init(io, file, &write_buf);
 
     try writer.openTag("KitChainPrm");
 
@@ -323,7 +330,7 @@ pub fn writeKitChainFile(chains: []const KitChain, file_path: []const u8) !void 
 }
 
 /// Export entire configuration to SPD-SX directory structure
-pub fn exportConfiguration(data_store: *const storage.DataStore, base_path: []const u8, allocator: Allocator) !void {
+pub fn exportConfiguration(io: std.Io, data_store: *const storage.DataStore, base_path: []const u8, allocator: Allocator) !void {
     // Create directory structure
     const kit_dir = try std.fmt.allocPrint(allocator, "{s}/SPD-SX/KIT", .{base_path});
     defer allocator.free(kit_dir);
@@ -331,14 +338,14 @@ pub fn exportConfiguration(data_store: *const storage.DataStore, base_path: []co
     const system_dir = try std.fmt.allocPrint(allocator, "{s}/SPD-SX/SYSTEM", .{base_path});
     defer allocator.free(system_dir);
 
-    std.fs.cwd().makePath(kit_dir) catch {};
-    std.fs.cwd().makePath(system_dir) catch {};
+    std.Io.Dir.createDirPath(.cwd(), io, kit_dir) catch {};
+    std.Io.Dir.createDirPath(.cwd(), io, system_dir) catch {};
 
     // Write kits
     for (data_store.kits.getAll(), 0..) |*kit, i| {
         var filename_buf: [512]u8 = undefined;
         const filename = std.fmt.bufPrint(&filename_buf, "{s}/kit{d:0>3}.spd", .{ kit_dir, i }) catch continue;
-        writeKitFile(kit, filename) catch |err| {
+        writeKitFile(io, kit, filename) catch |err| {
             std.debug.print("Error writing kit {d}: {}\n", .{ i, err });
         };
     }
@@ -348,11 +355,11 @@ pub fn exportConfiguration(data_store: *const storage.DataStore, base_path: []co
         const wave_dir = try std.fmt.allocPrint(allocator, "{s}/SPD-SX/WAVE/PRM/{d:0>2}", .{ base_path, wave.wave_id / 100 });
         defer allocator.free(wave_dir);
 
-        std.fs.cwd().makePath(wave_dir) catch {};
+        std.Io.Dir.createDirPath(.cwd(), io, wave_dir) catch {};
 
         var filename_buf: [512]u8 = undefined;
         const filename = std.fmt.bufPrint(&filename_buf, "{s}/{d:0>2}.spd", .{ wave_dir, wave.wave_id % 100 }) catch continue;
-        writeWaveFile(wave, filename) catch |err| {
+        writeWaveFile(io, wave, filename) catch |err| {
             std.debug.print("Error writing wave {d}: {}\n", .{ wave.wave_id, err });
         };
     }
@@ -360,14 +367,14 @@ pub fn exportConfiguration(data_store: *const storage.DataStore, base_path: []co
     // Write tag list
     const tag_file = try std.fmt.allocPrint(allocator, "{s}/tag_list.spd", .{system_dir});
     defer allocator.free(tag_file);
-    writeTagListFile(data_store.tags.getAll(), tag_file) catch |err| {
+    writeTagListFile(io, data_store.tags.getAll(), tag_file) catch |err| {
         std.debug.print("Error writing tag list: {}\n", .{err});
     };
 
     // Write kit chains
     const chain_file = try std.fmt.allocPrint(allocator, "{s}/sysparam.spd", .{system_dir});
     defer allocator.free(chain_file);
-    writeKitChainFile(data_store.kit_chains.getAll(), chain_file) catch |err| {
+    writeKitChainFile(io, data_store.kit_chains.getAll(), chain_file) catch |err| {
         std.debug.print("Error writing kit chains: {}\n", .{err});
     };
 }

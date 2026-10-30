@@ -35,13 +35,11 @@ pub const LoadResult = struct {
     error_message: ?[]const u8,
 };
 
-// Use CLI paths module for path operations
-const pathExists = cli_paths.pathExists;
 const extractRelativeWavePath = cli_paths.extractRelativeWavePath;
 
 /// Load SPD-SX configuration from a path (e.g., /Volumes/SPD-SX_/Roland)
 /// Returns a Project populated with the loaded data
-pub fn loadConfiguration(allocator: Allocator, base_path: []const u8) SpdSxError!LoadResult {
+pub fn loadConfiguration(allocator: Allocator, io: std.Io, base_path: []const u8) SpdSxError!LoadResult {
     var result = LoadResult{
         .project = models.Project.init(),
         .kit_count = 0,
@@ -57,12 +55,12 @@ pub fn loadConfiguration(allocator: Allocator, base_path: []const u8) SpdSxError
 
     // Check if SPD-SX/KIT exists at base_path
     if (cli_paths.getKitDir(&path_buf, base_path)) |kit_path| {
-        if (!pathExists(kit_path)) {
+        if (!cli_paths.pathExists(io, kit_path)) {
             // Try with /Roland prefix
             var roland_buf: [512]u8 = undefined;
             const roland_path = std.fmt.bufPrint(&roland_buf, "{s}/Roland", .{base_path}) catch base_path;
             if (cli_paths.getKitDir(&path_buf, roland_path)) |roland_kit_path| {
-                if (pathExists(roland_kit_path)) {
+                if (cli_paths.pathExists(io, roland_kit_path)) {
                     actual_path = roland_path;
                 }
             }
@@ -73,15 +71,15 @@ pub fn loadConfiguration(allocator: Allocator, base_path: []const u8) SpdSxError
     result.project.sample_library = models.SampleLibrary.init();
 
     // Load waves first (so we can reference them in kits)
-    result.wave_count = loadWaves(allocator, actual_path, &result.project.sample_library) catch 0;
+    result.wave_count = loadWaves(allocator, io, actual_path, &result.project.sample_library) catch 0;
 
     // Load kits
-    result.kit_count = loadKits(allocator, actual_path, &result.project) catch 0;
+    result.kit_count = loadKits(allocator, io, actual_path, &result.project) catch 0;
 
     // Load kit chains
-    result.chain_count = loadKitChains(allocator, actual_path, &result.project.kit_chain_library) catch 0;
+    result.chain_count = loadKitChains(allocator, io, actual_path, &result.project.kit_chain_library) catch 0;
 
-    result.tag_count = loadTagList(allocator, actual_path, &result.project.tag_library) catch 0;
+    result.tag_count = loadTagList(allocator, io, actual_path, &result.project.tag_library) catch 0;
 
     // Set file path
     result.project.setFilePath(base_path);
@@ -90,7 +88,7 @@ pub fn loadConfiguration(allocator: Allocator, base_path: []const u8) SpdSxError
 }
 
 /// Load waves from SPD-SX WAVE directory
-fn loadWaves(allocator: Allocator, base_path: []const u8, library: *models.SampleLibrary) !usize {
+fn loadWaves(allocator: Allocator, io: std.Io, base_path: []const u8, library: *models.SampleLibrary) !usize {
     var wave_count: usize = 0;
     var path_buf: [512]u8 = undefined;
     var full_path_buf: [512]u8 = undefined;
@@ -102,9 +100,9 @@ fn loadWaves(allocator: Allocator, base_path: []const u8, library: *models.Sampl
             const wave_id: u32 = @intCast(folder * cli_paths.MAX_WAVES_PER_FOLDER + file);
             const wave_path = cli_paths.getWavePrmFilePath(&path_buf, base_path, wave_id) orelse continue;
 
-            if (!pathExists(wave_path)) continue;
+            if (!cli_paths.pathExists(io, wave_path)) continue;
 
-            const cli_wave = cli_xml.parseWaveFile(allocator, wave_path, wave_id) catch continue;
+            const cli_wave = cli_xml.parseWaveFile(allocator, io, wave_path, wave_id) catch continue;
 
             // Convert CLI wave to UI sample and add to library
             const wave_name = cli_wave.getName(allocator) catch continue;
@@ -149,7 +147,7 @@ fn loadWaves(allocator: Allocator, base_path: []const u8, library: *models.Sampl
 }
 
 /// Load kits from SPD-SX KIT directory
-fn loadKits(allocator: Allocator, base_path: []const u8, project: *models.Project) !usize {
+fn loadKits(allocator: Allocator, io: std.Io, base_path: []const u8, project: *models.Project) !usize {
     var kit_count: usize = 0;
     var path_buf: [512]u8 = undefined;
 
@@ -159,9 +157,9 @@ fn loadKits(allocator: Allocator, base_path: []const u8, project: *models.Projec
     for (0..300) |i| {
         const kit_path = cli_paths.getKitFilePath(&path_buf, base_path, i) orelse continue;
 
-        if (!pathExists(kit_path)) continue;
+        if (!cli_paths.pathExists(io, kit_path)) continue;
 
-        const cli_kit = cli_xml.parseKitFile(allocator, kit_path) catch continue;
+        const cli_kit = cli_xml.parseKitFile(allocator, io, kit_path) catch continue;
 
         // Convert CLI kit to UI kit
         if (project.kit_count < models.Project.MAX_KITS) {
@@ -179,16 +177,16 @@ fn loadKits(allocator: Allocator, base_path: []const u8, project: *models.Projec
     return kit_count;
 }
 
-fn loadTagList(allocator: Allocator, base_path: []const u8, library: *models.TagLibrary) !usize {
+fn loadTagList(allocator: Allocator, io: std.Io, base_path: []const u8, library: *models.TagLibrary) !usize {
     var path_buf: [512]u8 = undefined;
 
     const tag_path = cli_paths.getTagListPath(&path_buf, base_path) orelse return 0;
 
-    if (!pathExists(tag_path)) {
+    if (!cli_paths.pathExists(io, tag_path)) {
         return 0;
     }
 
-    var cli_tags = cli_xml.parseTagListFile(allocator, tag_path) catch {
+    var cli_tags = cli_xml.parseTagListFile(allocator, io, tag_path) catch {
         return 0;
     };
     defer cli_tags.deinit(allocator);
@@ -215,16 +213,16 @@ fn loadTagList(allocator: Allocator, base_path: []const u8, library: *models.Tag
 }
 
 /// Load kit chains from SPD-SX SYSTEM directory (sysparam.spd)
-fn loadKitChains(allocator: Allocator, base_path: []const u8, library: *models.KitChainLibrary) !usize {
+fn loadKitChains(allocator: Allocator, io: std.Io, base_path: []const u8, library: *models.KitChainLibrary) !usize {
     var path_buf: [512]u8 = undefined;
 
     const chain_path = cli_paths.getSysparamPath(&path_buf, base_path) orelse return 0;
 
-    if (!pathExists(chain_path)) {
+    if (!cli_paths.pathExists(io, chain_path)) {
         return 0;
     }
 
-    var cli_chains = cli_xml.parseKitChainFile(allocator, chain_path) catch {
+    var cli_chains = cli_xml.parseKitChainFile(allocator, io, chain_path) catch {
         return 0;
     };
     defer cli_chains.deinit(allocator);
@@ -338,26 +336,26 @@ fn convertCliKitToUiKit(allocator: Allocator, cli_kit: *const cli_types.Kit, ui_
 
     // Convert pad link
     if (cli_kit.link_pad0 >= 0 and cli_kit.link_pad0 < 16) {
-        ui_kit.pad_link = @enumFromInt(@as(u8, @intCast(cli_kit.link_pad0 + 1)));
+        ui_kit.pad_link = @fromBackingInt(@intCast(@as(u8, @intCast(cli_kit.link_pad0 + 1))));
     }
     if (cli_kit.link_pad1 >= 0 and cli_kit.link_pad1 < 16) {
-        ui_kit.pad_link_target = @enumFromInt(@as(u8, @intCast(cli_kit.link_pad1 + 1)));
+        ui_kit.pad_link_target = @fromBackingInt(@intCast(@as(u8, @intCast(cli_kit.link_pad1 + 1))));
     }
 
     // Convert FX1 settings
     ui_kit.fx1_switch = cli_kit.fx1_sw != 0;
-    ui_kit.fx1_type = @enumFromInt(@min(cli_kit.fx1_type, 20));
+    ui_kit.fx1_type = @fromBackingInt(@intCast(@min(cli_kit.fx1_type, 20)));
     for (cli_kit.fx1_prm, 0..) |prm, idx| {
         ui_kit.fx1_params.params[idx] = prm;
     }
 
     // Convert FX2 settings
     ui_kit.fx2_switch = cli_kit.fx2_sw != 0;
-    ui_kit.fx2_type = @enumFromInt(@min(cli_kit.fx2_type, 20));
+    ui_kit.fx2_type = @fromBackingInt(@intCast(@min(cli_kit.fx2_type, 20)));
     for (cli_kit.fx2_prm, 0..) |prm, idx| {
         ui_kit.fx2_params.params[idx] = prm;
     }
-    ui_kit.fx2_assign = @enumFromInt(@min(cli_kit.fx2_asgn, 15));
+    ui_kit.fx2_assign = @fromBackingInt(@intCast(@min(cli_kit.fx2_asgn, 15)));
 
     // Convert pads (both CLI and UI have 15 pads: 9 main + 4 triggers + 2 footswitches)
     const pad_count = @min(cli_types.MAX_PADS, models.Kit.NUM_PADS);
@@ -379,31 +377,31 @@ fn convertCliPadToUiPad(_: Allocator, cli_pad: *const cli_types.Pad, ui_pad: *mo
     ui_pad.pan = @intCast((cli_pan - 15) * 4);
 
     // Play mode
-    ui_pad.play_mode = @enumFromInt(@min(cli_pad.play_mode, 2));
+    ui_pad.play_mode = @fromBackingInt(@intCast(@min(cli_pad.play_mode, 2)));
 
     // Mute group
-    ui_pad.mute_group = @enumFromInt(@min(cli_pad.mute_grp, 9));
+    ui_pad.mute_group = @fromBackingInt(@intCast(@min(cli_pad.mute_grp, 9)));
 
     // MIDI note (-1 = OFF, 0-127 = note number)
     ui_pad.midi_note = cli_pad.note_num;
 
     // Loop mode
-    ui_pad.loop_mode = @enumFromInt(@min(cli_pad.loop, 4));
+    ui_pad.loop_mode = @fromBackingInt(@intCast(@min(cli_pad.loop, 4)));
 
     // Tempo sync
-    ui_pad.tempo_sync = @enumFromInt(@min(cli_pad.tempo_sync, 1));
+    ui_pad.tempo_sync = @fromBackingInt(@intCast(@min(cli_pad.tempo_sync, 1)));
 
     // Trigger mode
-    ui_pad.trigger_mode = @enumFromInt(@min(cli_pad.trig_type, 1));
+    ui_pad.trigger_mode = @fromBackingInt(@intCast(@min(cli_pad.trig_type, 1)));
 
     // Dynamics
-    ui_pad.dynamics = @enumFromInt(@min(cli_pad.dynamics, 1));
+    ui_pad.dynamics = @fromBackingInt(@intCast(@min(cli_pad.dynamics, 1)));
 
     // Voice assignment (poly/mono)
-    ui_pad.poly_mono = @enumFromInt(@min(cli_pad.voice_asgn, 1));
+    ui_pad.poly_mono = @fromBackingInt(@intCast(@min(cli_pad.voice_asgn, 1)));
 
     // Output assignment
-    ui_pad.output_assign = @enumFromInt(@min(cli_pad.out_asgn, 4));
+    ui_pad.output_assign = @fromBackingInt(@intCast(@min(cli_pad.out_asgn, 4)));
 
     // Reverse playback
     ui_pad.reverse = cli_pad.reverse != 0;
@@ -412,7 +410,7 @@ fn convertCliPadToUiPad(_: Allocator, cli_pad: *const cli_types.Pad, ui_pad: *mo
     if (cli_pad.pad_midi_ch == -1) {
         ui_pad.midi_channel = .global;
     } else if (cli_pad.pad_midi_ch >= 0 and cli_pad.pad_midi_ch < 16) {
-        ui_pad.midi_channel = @enumFromInt(@as(u8, @intCast(cli_pad.pad_midi_ch + 1)));
+        ui_pad.midi_channel = @fromBackingInt(@intCast(@as(u8, @intCast(cli_pad.pad_midi_ch + 1))));
     }
 
     // MIDI External Control (OFF or ON)
@@ -449,7 +447,7 @@ fn convertCliPadToUiPad(_: Allocator, cli_pad: *const cli_types.Pad, ui_pad: *mo
 }
 
 /// Save SPD-SX configuration to a path
-pub fn saveConfiguration(allocator: Allocator, project: *const models.Project, base_path: []const u8) SpdSxError!void {
+pub fn saveConfiguration(allocator: Allocator, io: std.Io, project: *const models.Project, base_path: []const u8) SpdSxError!void {
     // Create DataStore and populate from UI project
     var data_store = cli_storage.DataStore.init(allocator);
     defer data_store.deinit();
@@ -507,23 +505,23 @@ pub fn saveConfiguration(allocator: Allocator, project: *const models.Project, b
     }
 
     // Export using CLI xml_writer
-    cli_xml_writer.exportConfiguration(&data_store, base_path, allocator) catch {
+    cli_xml_writer.exportConfiguration(io, &data_store, base_path, allocator) catch {
         return SpdSxError.WriteError;
     };
 
     // Delete extra kit files that are no longer in the project
     // This ensures deleted kits don't reappear on reload
-    deleteExtraKitFiles(base_path, project.kit_count);
+    deleteExtraKitFiles(io, base_path, project.kit_count);
 
     // Delete extra wave parameter files beyond the current wave count
     // This ensures deleted waves don't reappear on reload
     // Waves are renumbered consecutively (0, 1, 2, ...) so any wave files
     // beyond the current count are orphaned and should be removed
-    deleteExtraWaveFiles(base_path, project.sample_library.count);
+    deleteExtraWaveFiles(io, base_path, project.sample_library.count);
 }
 
 /// Delete kit files beyond the current kit count
-fn deleteExtraKitFiles(base_path: []const u8, kit_count: u8) void {
+fn deleteExtraKitFiles(io: std.Io, base_path: []const u8, kit_count: u8) void {
     var path_buf: [512]u8 = undefined;
 
     // Check for kit files beyond our current count and delete them
@@ -533,7 +531,7 @@ fn deleteExtraKitFiles(base_path: []const u8, kit_count: u8) void {
 
         // Try to delete the file - if it doesn't exist, we can stop searching
         // (assuming kit files are contiguous)
-        std.fs.cwd().deleteFile(kit_path) catch |err| {
+        std.Io.Dir.deleteFileAbsolute(io, kit_path) catch |err| {
             if (err == error.FileNotFound) {
                 // No more kit files to delete
                 break;
@@ -546,7 +544,7 @@ fn deleteExtraKitFiles(base_path: []const u8, kit_count: u8) void {
 
 /// Delete wave parameter files beyond the current wave count
 /// Uses CLI paths module for path construction
-fn deleteExtraWaveFiles(base_path: []const u8, wave_count: u16) void {
+fn deleteExtraWaveFiles(io: std.Io, base_path: []const u8, wave_count: u16) void {
     var path_buf: [512]u8 = undefined;
 
     // Start from the first wave ID beyond our count
@@ -561,7 +559,7 @@ fn deleteExtraWaveFiles(base_path: []const u8, wave_count: u16) void {
     while (wave_id < max_wave_id and consecutive_not_found < 100) : (wave_id += 1) {
         const wave_path = cli_paths.getWavePrmFilePath(&path_buf, base_path, wave_id) orelse continue;
 
-        std.fs.cwd().deleteFile(wave_path) catch |err| {
+        std.Io.Dir.deleteFileAbsolute(io, wave_path) catch |err| {
             if (err == error.FileNotFound) {
                 consecutive_not_found += 1;
                 continue;
@@ -590,27 +588,27 @@ fn convertUiKitToCliKit(allocator: Allocator, ui_kit: *const models.Kit, library
     cli_kit.tempo = ui_kit.tempo * 10 + ui_kit.tempo_decimal;
 
     // Convert pad link
-    if (@intFromEnum(ui_kit.pad_link) > 0) {
-        cli_kit.link_pad0 = @intCast(@intFromEnum(ui_kit.pad_link) - 1);
+    if (@backingInt(ui_kit.pad_link) > 0) {
+        cli_kit.link_pad0 = @intCast(@backingInt(ui_kit.pad_link) - 1);
     }
-    if (@intFromEnum(ui_kit.pad_link_target) > 0) {
-        cli_kit.link_pad1 = @intCast(@intFromEnum(ui_kit.pad_link_target) - 1);
+    if (@backingInt(ui_kit.pad_link_target) > 0) {
+        cli_kit.link_pad1 = @intCast(@backingInt(ui_kit.pad_link_target) - 1);
     }
 
     // Convert FX1 settings
     cli_kit.fx1_sw = if (ui_kit.fx1_switch) 1 else 0;
-    cli_kit.fx1_type = @intFromEnum(ui_kit.fx1_type);
+    cli_kit.fx1_type = @backingInt(ui_kit.fx1_type);
     for (ui_kit.fx1_params.params, 0..) |prm, idx| {
         cli_kit.fx1_prm[idx] = prm;
     }
 
     // Convert FX2 settings
     cli_kit.fx2_sw = if (ui_kit.fx2_switch) 1 else 0;
-    cli_kit.fx2_type = @intFromEnum(ui_kit.fx2_type);
+    cli_kit.fx2_type = @backingInt(ui_kit.fx2_type);
     for (ui_kit.fx2_params.params, 0..) |prm, idx| {
         cli_kit.fx2_prm[idx] = prm;
     }
-    cli_kit.fx2_asgn = @intFromEnum(ui_kit.fx2_assign);
+    cli_kit.fx2_asgn = @backingInt(ui_kit.fx2_assign);
 
     // Convert pads
     const pad_count = @min(cli_types.MAX_PADS, models.Kit.NUM_PADS);
@@ -634,31 +632,31 @@ fn convertUiPadToCliPad(ui_pad: *const models.Pad, library: *const models.Sample
     cli_pad.wv_pan = @intCast(std.math.clamp(@divTrunc(ui_pan, 4) + 15, 0, 30));
 
     // Play mode
-    cli_pad.play_mode = @intFromEnum(ui_pad.play_mode);
+    cli_pad.play_mode = @backingInt(ui_pad.play_mode);
 
     // Mute group
-    cli_pad.mute_grp = @intFromEnum(ui_pad.mute_group);
+    cli_pad.mute_grp = @backingInt(ui_pad.mute_group);
 
     // MIDI note (-1 = OFF, 0-127 = note number)
     cli_pad.note_num = ui_pad.midi_note;
 
     // Loop mode
-    cli_pad.loop = @intFromEnum(ui_pad.loop_mode);
+    cli_pad.loop = @backingInt(ui_pad.loop_mode);
 
     // Tempo sync
-    cli_pad.tempo_sync = @intFromEnum(ui_pad.tempo_sync);
+    cli_pad.tempo_sync = @backingInt(ui_pad.tempo_sync);
 
     // Trigger type
-    cli_pad.trig_type = @intFromEnum(ui_pad.trigger_mode);
+    cli_pad.trig_type = @backingInt(ui_pad.trigger_mode);
 
     // Dynamics
-    cli_pad.dynamics = @intFromEnum(ui_pad.dynamics);
+    cli_pad.dynamics = @backingInt(ui_pad.dynamics);
 
     // Voice assignment
-    cli_pad.voice_asgn = @intFromEnum(ui_pad.poly_mono);
+    cli_pad.voice_asgn = @backingInt(ui_pad.poly_mono);
 
     // Output assignment
-    cli_pad.out_asgn = @intFromEnum(ui_pad.output_assign);
+    cli_pad.out_asgn = @backingInt(ui_pad.output_assign);
 
     // Reverse playback
     cli_pad.reverse = if (ui_pad.reverse) 1 else 0;
@@ -667,7 +665,7 @@ fn convertUiPadToCliPad(ui_pad: *const models.Pad, library: *const models.Sample
     if (ui_pad.midi_channel == .global) {
         cli_pad.pad_midi_ch = -1;
     } else {
-        cli_pad.pad_midi_ch = @as(i8, @intCast(@intFromEnum(ui_pad.midi_channel))) - 1;
+        cli_pad.pad_midi_ch = @as(i8, @intCast(@backingInt(ui_pad.midi_channel))) - 1;
     }
 
     // MIDI External Control (OFF or ON -> CLI uses 0 or 1)
@@ -707,7 +705,7 @@ fn convertUiPadToCliPad(ui_pad: *const models.Pad, library: *const models.Sample
 /// wave_index: the index in the sample library
 /// sample_path: the path to the WAV file
 /// base_path: the SPD-SX configuration base path
-pub fn deleteWaveFiles(base_path: []const u8, wave_index: u16, sample_path: []const u8) void {
+pub fn deleteWaveFiles(io: std.Io, base_path: []const u8, wave_index: u16, sample_path: []const u8) void {
     var path_buf: [512]u8 = undefined;
 
     // Delete the actual WAV file if it exists and is within the SPD-SX directory
@@ -716,29 +714,29 @@ pub fn deleteWaveFiles(base_path: []const u8, wave_index: u16, sample_path: []co
         // to avoid accidentally deleting files from other locations
         const wave_data_marker = cli_paths.SPDSX_ROOT ++ "/" ++ cli_paths.WAVE_DATA_DIR;
         if (std.mem.indexOf(u8, sample_path, wave_data_marker) != null) {
-            std.fs.cwd().deleteFile(sample_path) catch {};
+            std.Io.Dir.deleteFileAbsolute(io, sample_path) catch {};
         }
     }
 
     // Delete the .spd parameter file using CLI paths
     const prm_path = cli_paths.getWavePrmFilePath(&path_buf, base_path, wave_index) orelse return;
-    std.fs.cwd().deleteFile(prm_path) catch {};
+    std.Io.Dir.deleteFileAbsolute(io, prm_path) catch {};
 }
 
 /// Check if the path looks like a valid SPD-SX configuration path
-/// Delegates to CLI paths module
-pub const isValidSpdSxPath = cli_paths.isValidSpdSxPath;
+pub fn isValidSpdSxPath(io: std.Io, path: []const u8) bool {
+    return cli_paths.isValidSpdSxPath(io, path);
+}
 
 /// Create initial SPD-SX directory structure
-/// Delegates to CLI paths module
-pub fn createSpdSxStructure(base_path: []const u8) SpdSxError!void {
-    cli_paths.createDirectoryStructure(base_path);
+pub fn createSpdSxStructure(io: std.Io, base_path: []const u8) SpdSxError!void {
+    cli_paths.createDirectoryStructure(io, base_path);
 }
 
 /// Import result
 pub const ImportResult = struct {
     success: bool = false,
-    relative_path: [256]u8 = [_]u8{0} ** 256,
+    relative_path: [256]u8 = @splat(0),
     relative_path_len: usize = 0,
     sample_index: ?u16 = null,
     error_message: ?[]const u8 = null,
@@ -753,6 +751,7 @@ pub const ImportResult = struct {
 /// Uses CLI infrastructure for wave metadata and paths
 pub fn importAudioFile(
     allocator: Allocator,
+    io: std.Io,
     source_path: []const u8,
     base_path: []const u8,
     library: *models.SampleLibrary,
@@ -777,7 +776,7 @@ pub fn importAudioFile(
     const folder = cli_paths.getWaveFolder(wave_index);
 
     // Ensure destination directories exist using CLI paths
-    cli_paths.ensureWaveFolderExists(base_path, folder);
+    cli_paths.ensureWaveFolderExists(io, base_path, folder);
 
     // Create destination path using CLI paths
     var dest_path_buf: [512]u8 = undefined;
@@ -787,7 +786,7 @@ pub fn importAudioFile(
     };
 
     // Convert and copy the audio file to 44.1kHz 16-bit stereo WAV
-    convertAndCopyAudio(allocator, source_path, dest_path) catch |err| {
+    convertAndCopyAudio(allocator, io, source_path, dest_path) catch |err| {
         result.error_message = switch (err) {
             error.FileNotFound => "Source file not found",
             error.OutOfMemory => "Out of memory",
@@ -844,7 +843,7 @@ pub fn importAudioFile(
             return result;
         };
 
-        cli_xml_writer.writeWaveFile(&cli_wave, prm_path) catch {
+        cli_xml_writer.writeWaveFile(io, &cli_wave, prm_path) catch {
             // Non-fatal - will be written on save anyway
         };
     }
@@ -854,7 +853,7 @@ pub fn importAudioFile(
 }
 
 /// Convert audio file to 44.1kHz 16-bit stereo WAV and copy to destination
-fn convertAndCopyAudio(allocator: Allocator, source_path: []const u8, dest_path: []const u8) !void {
+fn convertAndCopyAudio(allocator: Allocator, io: std.Io, source_path: []const u8, dest_path: []const u8) !void {
     const sdl = @import("sdl.zig");
     const c = sdl.c;
 
@@ -940,13 +939,13 @@ fn convertAndCopyAudio(allocator: Allocator, source_path: []const u8, dest_path:
     defer if (converted_buf) |buf| allocator.free(buf);
 
     // Write WAV file
-    try writeWavFile(dest_path, final_data, final_len, target_freq, target_channels);
+    try writeWavFile(io, dest_path, final_data, final_len, target_freq, target_channels);
 }
 
 /// Write audio data as a WAV file (44.1kHz 16-bit stereo)
-fn writeWavFile(path: []const u8, data: []const u8, data_len: u32, sample_rate: c_int, channels: u8) !void {
-    const file = std.fs.cwd().createFile(path, .{}) catch return error.WriteError;
-    defer file.close();
+fn writeWavFile(io: std.Io, path: []const u8, data: []const u8, data_len: u32, sample_rate: c_int, channels: u8) !void {
+    const file = std.Io.Dir.createFileAbsolute(io, path, .{}) catch return error.WriteError;
+    defer file.close(io);
 
     // WAV header parameters
     const bits_per_sample: u16 = 16;
@@ -989,14 +988,18 @@ fn writeWavFile(path: []const u8, data: []const u8, data_len: u32, sample_rate: 
     pos += 4;
     std.mem.writeInt(u32, header[pos..][0..4], data_len, .little); // Subchunk2Size
 
-    // Write header and audio data
-    _ = file.write(&header) catch return error.WriteError;
-    _ = file.write(data) catch return error.WriteError;
+    var write_buf: [4096]u8 = undefined;
+    var file_writer = file.writer(io, &write_buf);
+    file_writer.interface.writeAll(&header) catch return error.WriteError;
+    file_writer.interface.writeAll(data) catch return error.WriteError;
 }
 
 // Tests
 test "path exists check" {
-    const exists = pathExists("/tmp");
+    var threaded: std.Io.Threaded = .init(std.testing.allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+    const exists = cli_paths.pathExists(io, "/tmp");
     try std.testing.expect(exists or !exists); // Just verify it doesn't crash
 }
 

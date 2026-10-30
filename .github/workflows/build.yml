@@ -2,12 +2,13 @@ name: Zig CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+    tags: ["v*"]
   pull_request:
 
 jobs:
   build:
-    name: Build (${{ matrix.os }} - ${{ matrix.arch }})
+    name: Build (${{ matrix.asset_id }})
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -18,26 +19,31 @@ jobs:
           - os: ubuntu-latest
             arch: x86_64
             zig_target: x86_64-linux-gnu
+            asset_id: linux-x86_64
 
           # Linux ARM64
           - os: ubuntu-latest
             arch: aarch64
             zig_target: aarch64-linux-gnu
+            asset_id: linux-aarch64
 
           # macOS Intel
-          - os: macos-15-intel   # Intel runner
+          - os: macos-15-intel
             arch: x86_64
             zig_target: x86_64-macos
+            asset_id: macos-x86_64
 
           # macOS Apple Silicon
-          - os: macos-latest  # Apple Silicon runner
+          - os: macos-latest
             arch: aarch64
             zig_target: aarch64-macos
+            asset_id: macos-aarch64
 
           # Windows x86_64
           - os: windows-latest
             arch: x86_64
             zig_target: x86_64-windows-gnu
+            asset_id: windows-x86_64
 
     steps:
       - name: Checkout repository
@@ -53,14 +59,12 @@ jobs:
           key: zig-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('**/*.zig') }}
           restore-keys: zig-${{ runner.os }}-${{ matrix.arch }}-
 
-      # ------------------------- # SDL2 for Linux (Ubuntu) # -------------------------
       - name: Install SDL2 (Linux)
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y libsdl2-dev
 
-      # ------------------------- # SDL2 for macOS # -------------------------
       - name: Cache Homebrew
         if: startsWith(matrix.os, 'macos')
         uses: actions/cache@v5
@@ -77,7 +81,6 @@ jobs:
           brew update
           brew install sdl2
 
-      # ------------------------- # SDL2 for Windows (MSYS2) # -------------------------
       - name: Cache MSYS2
         if: startsWith(matrix.os, 'windows')
         uses: actions/cache@v5
@@ -95,30 +98,59 @@ jobs:
       - name: Install Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.2
+          version: 0.17.0
 
       - name: Build
-        run: zig build -Dtarget=${{ matrix.zig_target }}
+        shell: bash
+        run: |
+          OPTS=()
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            OPTS+=(-Doptimize=ReleaseFast)
+          fi
+          zig build -Dtarget=${{ matrix.zig_target }} "${OPTS[@]}"
 
-      - name: Upload build artifacts
+      - name: Package release asset (Unix)
+        if: startsWith(github.ref, 'refs/tags/') && !startsWith(matrix.os, 'windows')
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          mkdir -p dist
+          tar -czf "dist/speedsx-${TAG}-${{ matrix.asset_id }}.tar.gz" -C zig-out/bin speedsx
+
+      - name: Package release asset (Windows)
+        if: startsWith(github.ref, 'refs/tags/') && startsWith(matrix.os, 'windows')
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF -replace 'refs/tags/', ''
+          New-Item -ItemType Directory -Force -Path staging | Out-Null
+          Copy-Item zig-out/bin/speedsx.exe staging/
+          Copy-Item C:\tools\msys64\mingw64\bin\SDL2.dll staging/
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path staging/* -DestinationPath "dist/speedsx-${tag}-${{ matrix.asset_id }}.zip" -Force
+
+      - name: Upload release artifact
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.os }}-${{ matrix.arch }}
-          path: zig-out/bin/
+          name: release-${{ matrix.asset_id }}
+          path: dist/speedsx-*
 
   release:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
     steps:
-      - name: Download all artifacts
+      - name: Download release artifacts
         uses: actions/download-artifact@v6
         with:
           path: artifacts
+          pattern: release-*
+          merge-multiple: true
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
-          env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: artifacts/*

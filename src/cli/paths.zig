@@ -113,53 +113,53 @@ pub fn getWaveFileIndex(wave_id: u32) usize {
 }
 
 /// Check if a path exists
-pub fn pathExists(path: []const u8) bool {
-    std.fs.cwd().access(path, .{}) catch return false;
+pub fn pathExists(io: std.Io, path: []const u8) bool {
+    std.Io.Dir.accessAbsolute(io, path, .{ .read = true }) catch return false;
     return true;
 }
 
 /// Check if a path is a valid SPD-SX configuration root
-pub fn isValidSpdSxPath(path: []const u8) bool {
+pub fn isValidSpdSxPath(io: std.Io, path: []const u8) bool {
     var buf: [512]u8 = undefined;
 
     // Check for SPD-SX/KIT directory
     if (getKitDir(&buf, path)) |kit_path| {
-        if (pathExists(kit_path)) return true;
+        if (pathExists(io, kit_path)) return true;
     }
 
     // Check with /Roland prefix
     var roland_buf: [512]u8 = undefined;
     const roland_path = std.fmt.bufPrint(&roland_buf, "{s}/Roland", .{path}) catch return false;
     if (getKitDir(&buf, roland_path)) |kit_path| {
-        if (pathExists(kit_path)) return true;
+        if (pathExists(io, kit_path)) return true;
     }
 
     return false;
 }
 
 /// Create all required SPD-SX directories
-pub fn createDirectoryStructure(base_path: []const u8) void {
+pub fn createDirectoryStructure(io: std.Io, base_path: []const u8) void {
     var buf: [512]u8 = undefined;
 
     // Create main directories
-    if (getSpdSxRoot(&buf, base_path)) |p| std.fs.cwd().makePath(p) catch {};
-    if (getKitDir(&buf, base_path)) |p| std.fs.cwd().makePath(p) catch {};
-    if (getWavePrmDir(&buf, base_path)) |p| std.fs.cwd().makePath(p) catch {};
-    if (getWaveDataDir(&buf, base_path)) |p| std.fs.cwd().makePath(p) catch {};
-    if (getSystemDir(&buf, base_path)) |p| std.fs.cwd().makePath(p) catch {};
+    if (getSpdSxRoot(&buf, base_path)) |p| std.Io.Dir.createDirPath(.cwd(), io, p) catch {};
+    if (getKitDir(&buf, base_path)) |p| std.Io.Dir.createDirPath(.cwd(), io, p) catch {};
+    if (getWavePrmDir(&buf, base_path)) |p| std.Io.Dir.createDirPath(.cwd(), io, p) catch {};
+    if (getWaveDataDir(&buf, base_path)) |p| std.Io.Dir.createDirPath(.cwd(), io, p) catch {};
+    if (getSystemDir(&buf, base_path)) |p| std.Io.Dir.createDirPath(.cwd(), io, p) catch {};
 
     // Create wave subdirectories (00-99)
     for (0..MAX_WAVE_FOLDERS) |folder| {
-        if (getWavePrmFolderPath(&buf, base_path, folder)) |p| std.fs.cwd().makePath(p) catch {};
-        if (getWaveDataFolderPath(&buf, base_path, folder)) |p| std.fs.cwd().makePath(p) catch {};
+        if (getWavePrmFolderPath(&buf, base_path, folder)) |p| std.Io.Dir.createDirPath(.cwd(), io, p) catch {};
+        if (getWaveDataFolderPath(&buf, base_path, folder)) |p| std.Io.Dir.createDirPath(.cwd(), io, p) catch {};
     }
 }
 
 /// Ensure a specific wave folder exists (both PRM and DATA)
-pub fn ensureWaveFolderExists(base_path: []const u8, folder: usize) void {
+pub fn ensureWaveFolderExists(io: std.Io, base_path: []const u8, folder: usize) void {
     var buf: [512]u8 = undefined;
-    if (getWavePrmFolderPath(&buf, base_path, folder)) |p| std.fs.cwd().makePath(p) catch {};
-    if (getWaveDataFolderPath(&buf, base_path, folder)) |p| std.fs.cwd().makePath(p) catch {};
+    if (getWavePrmFolderPath(&buf, base_path, folder)) |p| std.Io.Dir.createDirPath(.cwd(), io, p) catch {};
+    if (getWaveDataFolderPath(&buf, base_path, folder)) |p| std.Io.Dir.createDirPath(.cwd(), io, p) catch {};
 }
 
 /// Get filename from a path

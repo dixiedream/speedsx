@@ -2,7 +2,7 @@
 
 A fast, native configuration editor for the Roland SPD-SX sampling pad.
 
-![Zig](https://img.shields.io/badge/Zig-0.15-orange)
+![Zig](https://img.shields.io/badge/Zig-0.17-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -24,7 +24,7 @@ SpeedSX provides a graphical interface for editing Roland SPD-SX configurations 
 
 ## Requirements
 
-- **Zig** 0.15 or later
+- **Zig** 0.17 or later
 - **SDL2** development libraries
 
 ### Installing SDL2
@@ -61,7 +61,7 @@ The executable will be in `zig-out/bin/speedsx`.
 
 ```bash
 # Release build (optimized)
-zig build -Doptimize=ReleaseFast
+zig build -Doptimize=fast
 
 # Run tests
 zig build test
@@ -101,6 +101,24 @@ zig build run
 - **Drag & drop** audio files directly onto pads or the wave list
 - Use **F3** to open the sample browser and scan a folder for audio files
 - Supported formats: WAV, AIFF (automatically converted to SPD-SX format)
+
+## Releasing
+
+Pushing a version tag triggers a GitHub Actions workflow that builds optimized binaries for Linux (x86_64 and ARM64), macOS (Intel and Apple Silicon), and Windows, then publishes a GitHub Release with downloadable archives.
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+Use tags matching `v*` (for example `v0.2.0`).
+
+**Runtime dependencies for release binaries:**
+
+- **Linux and macOS** — SDL2 must be installed on the system (same as [Installing SDL2](#installing-sdl2) above).
+- **Windows** — the release zip includes `SDL2.dll` next to `speedsx.exe`; extract both to the same folder.
+
+Add release notes on GitHub after the release is created (the workflow only uploads binaries).
 
 ## Contributing
 

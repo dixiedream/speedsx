@@ -12,6 +12,8 @@ const DragDropState = types.DragDropState;
 const ScrollState = types.ScrollState;
 const ScrollBounds = types.ScrollBounds;
 const ContextMenuState = types.ContextMenuState;
+const DropdownFieldId = types.DropdownFieldId;
+const DropdownPopupState = types.DropdownPopupState;
 const ClipboardState = types.ClipboardState;
 const SampleBrowserState = types.SampleBrowserState;
 const SampleFileEntry = types.SampleFileEntry;
@@ -48,7 +50,7 @@ pub const EditorUI = struct {
     show_wave_editor: bool = false,
 
     // Pad animation
-    pad_flash: [15]f32 = [_]f32{0} ** 15,
+    pad_flash: [15]f32 = @splat(0),
 
     // Composed state components
     input: InputState = .{},
@@ -56,13 +58,14 @@ pub const EditorUI = struct {
     drag: DragDropState = .{},
     scroll: ScrollState = .{},
     context_menu: ContextMenuState = .{},
+    dropdown_popup: DropdownPopupState = .{},
     clipboard: ClipboardState = .{},
     sample_browser: SampleBrowserState = .{},
     wave_editor: WaveEditorState = .{},
     file_drop: FileDropState = .{},
 
     // Sample usage cache (avoids recalculating every frame)
-    sample_usage_cache: [models.SampleLibrary.MAX_SAMPLES]bool = [_]bool{false} ** models.SampleLibrary.MAX_SAMPLES,
+    sample_usage_cache: [models.SampleLibrary.MAX_SAMPLES]bool = @splat(false),
     sample_usage_dirty: bool = true,
 
     pub fn init() EditorUI {
@@ -102,6 +105,92 @@ pub const EditorUI = struct {
         return self.input.mouse_clicked and self.isHovered(x, y, w, h);
     }
 
+    fn clearTextSelection(self: *EditorUI) void {
+        self.text_input.has_selection = false;
+    }
+
+    fn textSelectionRange(self: *const EditorUI) ?struct { start: u8, end: u8 } {
+        if (!self.text_input.has_selection) return null;
+        const a = self.text_input.selection_start;
+        const b = self.text_input.selection_end;
+        if (a == b) return null;
+        return .{
+            .start = @min(a, b),
+            .end = @max(a, b),
+        };
+    }
+
+    fn deleteTextRange(self: *EditorUI, start: u8, end: u8) void {
+        const len = end - start;
+        var i = start;
+        while (i + len < self.text_input.input_len) : (i += 1) {
+            self.text_input.input_buffer[i] = self.text_input.input_buffer[i + len];
+        }
+        self.text_input.input_len -= len;
+        self.text_input.cursor_pos = start;
+        self.clearTextSelection();
+        self.text_input.cursor_blink = 0;
+    }
+
+    fn insertCharAtCursor(self: *EditorUI, char: u8) void {
+        if (self.text_input.input_len >= 63) return;
+
+        if (self.text_input.cursor_pos < self.text_input.input_len) {
+            var i: u8 = self.text_input.input_len;
+            while (i > self.text_input.cursor_pos) : (i -= 1) {
+                self.text_input.input_buffer[i] = self.text_input.input_buffer[i - 1];
+            }
+        }
+        self.text_input.input_buffer[self.text_input.cursor_pos] = char;
+        self.text_input.input_len += 1;
+        self.text_input.cursor_pos += 1;
+    }
+
+    /// Text to copy/cut: selection if any, otherwise the whole field
+    pub fn getTextInputCopyRange(self: *const EditorUI) []const u8 {
+        if (self.textSelectionRange()) |range| {
+            return self.text_input.input_buffer[range.start..range.end];
+        }
+        return self.getInputText();
+    }
+
+    pub fn selectAllTextInput(self: *EditorUI) void {
+        self.text_input.selection_start = 0;
+        self.text_input.selection_end = self.text_input.input_len;
+        self.text_input.has_selection = self.text_input.input_len > 0;
+        self.text_input.cursor_pos = self.text_input.input_len;
+        self.text_input.cursor_blink = 0;
+    }
+
+    pub fn deleteTextInputSelection(self: *EditorUI) void {
+        if (self.textSelectionRange()) |range| {
+            self.deleteTextRange(range.start, range.end);
+        }
+    }
+
+    pub fn cutTextInput(self: *EditorUI) void {
+        if (self.textSelectionRange()) |range| {
+            self.deleteTextRange(range.start, range.end);
+        } else if (self.text_input.input_len > 0) {
+            self.text_input.input_len = 0;
+            self.text_input.cursor_pos = 0;
+            self.clearTextSelection();
+            self.text_input.cursor_blink = 0;
+        }
+    }
+
+    pub fn pasteTextInput(self: *EditorUI, text: []const u8) void {
+        if (self.text_input.focused_field == .none) return;
+        self.deleteTextInputSelection();
+
+        for (text) |char| {
+            if (char < 32 or char > 126) continue;
+            if (self.text_input.input_len >= 63) break;
+            self.insertCharAtCursor(char);
+        }
+        self.text_input.cursor_blink = 0;
+    }
+
     /// Start editing a text field
     pub fn startTextInput(self: *EditorUI, field: TextFieldId, initial_text: []const u8) void {
         self.text_input.focused_field = field;
@@ -109,6 +198,7 @@ pub const EditorUI = struct {
         @memcpy(self.text_input.input_buffer[0..len], initial_text[0..len]);
         self.text_input.input_len = @intCast(len);
         self.text_input.cursor_pos = @intCast(len);
+        self.text_input.has_selection = false;
         self.text_input.cursor_blink = 0;
     }
 
@@ -124,6 +214,7 @@ pub const EditorUI = struct {
         self.text_input.focused_field = .none;
         self.text_input.input_len = 0;
         self.text_input.cursor_pos = 0;
+        self.clearTextSelection();
     }
 
     /// Get current input text
@@ -134,29 +225,22 @@ pub const EditorUI = struct {
     /// Handle a character input
     pub fn handleCharInput(self: *EditorUI, char: u8) void {
         if (self.text_input.focused_field == .none) return;
-        if (char < 32 or char > 126) return; // Only printable ASCII
-        if (self.text_input.input_len >= 63) return; // Buffer full
-
-        // Insert character at cursor position
-        if (self.text_input.cursor_pos < self.text_input.input_len) {
-            // Shift characters to the right
-            var i: u8 = self.text_input.input_len;
-            while (i > self.text_input.cursor_pos) : (i -= 1) {
-                self.text_input.input_buffer[i] = self.text_input.input_buffer[i - 1];
-            }
-        }
-        self.text_input.input_buffer[self.text_input.cursor_pos] = char;
-        self.text_input.input_len += 1;
-        self.text_input.cursor_pos += 1;
+        if (char < 32 or char > 126) return;
+        self.deleteTextInputSelection();
+        if (self.text_input.input_len >= 63) return;
+        self.insertCharAtCursor(char);
         self.text_input.cursor_blink = 0;
     }
 
     /// Handle backspace
     pub fn handleBackspace(self: *EditorUI) void {
         if (self.text_input.focused_field == .none) return;
+        if (self.textSelectionRange()) |range| {
+            self.deleteTextRange(range.start, range.end);
+            return;
+        }
         if (self.text_input.cursor_pos == 0) return;
 
-        // Remove character before cursor
         if (self.text_input.cursor_pos < self.text_input.input_len) {
             var i: u8 = self.text_input.cursor_pos - 1;
             while (i < self.text_input.input_len - 1) : (i += 1) {
@@ -171,9 +255,12 @@ pub const EditorUI = struct {
     /// Handle delete key
     pub fn handleDelete(self: *EditorUI) void {
         if (self.text_input.focused_field == .none) return;
+        if (self.textSelectionRange()) |range| {
+            self.deleteTextRange(range.start, range.end);
+            return;
+        }
         if (self.text_input.cursor_pos >= self.text_input.input_len) return;
 
-        // Remove character at cursor
         var i: u8 = self.text_input.cursor_pos;
         while (i < self.text_input.input_len - 1) : (i += 1) {
             self.text_input.input_buffer[i] = self.text_input.input_buffer[i + 1];
@@ -184,6 +271,7 @@ pub const EditorUI = struct {
 
     /// Move cursor left
     pub fn moveCursorLeft(self: *EditorUI) void {
+        self.clearTextSelection();
         if (self.text_input.cursor_pos > 0) {
             self.text_input.cursor_pos -= 1;
             self.text_input.cursor_blink = 0;
@@ -192,6 +280,7 @@ pub const EditorUI = struct {
 
     /// Move cursor right
     pub fn moveCursorRight(self: *EditorUI) void {
+        self.clearTextSelection();
         if (self.text_input.cursor_pos < self.text_input.input_len) {
             self.text_input.cursor_pos += 1;
             self.text_input.cursor_blink = 0;
@@ -200,12 +289,14 @@ pub const EditorUI = struct {
 
     /// Move cursor to start
     pub fn moveCursorHome(self: *EditorUI) void {
+        self.clearTextSelection();
         self.text_input.cursor_pos = 0;
         self.text_input.cursor_blink = 0;
     }
 
     /// Move cursor to end
     pub fn moveCursorEnd(self: *EditorUI) void {
+        self.clearTextSelection();
         self.text_input.cursor_pos = self.text_input.input_len;
         self.text_input.cursor_blink = 0;
     }
@@ -290,6 +381,18 @@ pub const EditorUI = struct {
     pub fn handleMouseWheel(self: *EditorUI, scroll_y: i32) void {
         const scroll_speed: i32 = 28; // 2 items per scroll tick (14px per item)
 
+        if (self.dropdown_popup.open) {
+            const item_h: i32 = 20;
+            const max_visible: i32 = 8;
+            const visible: i32 = @min(max_visible, @as(i32, @intCast(self.dropdown_popup.item_count)));
+            const popup_h = visible * item_h + 2;
+            if (self.isHovered(self.dropdown_popup.x, self.dropdown_popup.y, self.dropdown_popup.w, popup_h)) {
+                self.dropdown_popup.scroll -= scroll_y * item_h;
+                self.dropdown_popup.scroll = std.math.clamp(self.dropdown_popup.scroll, 0, self.dropdown_popup.max_scroll);
+                return;
+            }
+        }
+
         // If sample browser is open, handle its scrolling
         if (self.show_sample_browser and self.sample_browser.max_scroll > 0) {
             self.sample_browser.scroll -= scroll_y * scroll_speed;
@@ -326,7 +429,38 @@ pub const EditorUI = struct {
     }
 
     /// Open context menu for a pad at current mouse position
+    pub fn openDropdown(self: *EditorUI, field_id: DropdownFieldId, anchor_x: i32, anchor_y: i32, anchor_w: i32, anchor_h: i32, item_count: usize) void {
+        self.closeContextMenu();
+        const popup_w = @max(anchor_w, 140);
+        const item_h: i32 = 20;
+        const max_visible: i32 = 8;
+        const visible: i32 = @min(max_visible, @as(i32, @intCast(item_count)));
+        const popup_h = visible * item_h + 2;
+        const max_scroll = @as(i32, @intCast(item_count)) * item_h - popup_h + 2;
+        self.dropdown_popup = .{
+            .open = true,
+            .field_id = field_id,
+            .anchor_x = anchor_x,
+            .anchor_y = anchor_y,
+            .anchor_w = anchor_w,
+            .anchor_h = anchor_h,
+            .x = anchor_x,
+            .y = anchor_y + anchor_h,
+            .w = popup_w,
+            .item_count = @intCast(@min(item_count, 255)),
+            .scroll = 0,
+            .max_scroll = @max(0, max_scroll),
+        };
+    }
+
+    pub fn closeDropdown(self: *EditorUI) void {
+        self.dropdown_popup.open = false;
+        self.dropdown_popup.field_id = .none;
+        self.dropdown_popup.scroll = 0;
+    }
+
     pub fn openContextMenu(self: *EditorUI, pad_index: u8) void {
+        self.closeDropdown();
         self.context_menu.open = true;
         self.context_menu.menu_type = .pad;
         self.context_menu.x = self.input.mouse_x;
@@ -336,6 +470,7 @@ pub const EditorUI = struct {
 
     /// Open context menu for a wave at current mouse position
     pub fn openWaveContextMenu(self: *EditorUI, wave_index: u16) void {
+        self.closeDropdown();
         self.context_menu.open = true;
         self.context_menu.menu_type = .wave;
         self.context_menu.x = self.input.mouse_x;
@@ -445,7 +580,7 @@ pub const EditorUI = struct {
 
     /// Check if any modal is blocking input
     pub fn isModalOpen(self: *const EditorUI) bool {
-        return self.show_sample_browser or self.show_midi_config or self.show_settings or self.show_kit_chain or self.show_wave_editor or self.context_menu.open;
+        return self.show_sample_browser or self.show_midi_config or self.show_settings or self.show_kit_chain or self.show_wave_editor or self.context_menu.open or self.dropdown_popup.open;
     }
 
     /// Set sample browser path
