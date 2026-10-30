@@ -102,6 +102,24 @@ zig build run
 - Use **F3** to open the sample browser and scan a folder for audio files
 - Supported formats: WAV, AIFF (automatically converted to SPD-SX format)
 
+## Releasing
+
+Pushing a version tag triggers a GitHub Actions workflow that builds optimized binaries for Linux (x86_64 and ARM64), macOS (Intel and Apple Silicon), and Windows, then publishes a GitHub Release with downloadable archives.
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+Use tags matching `v*` (for example `v0.2.0`).
+
+**Runtime dependencies for release binaries:**
+
+- **Linux and macOS** — SDL2 must be installed on the system (same as [Installing SDL2](#installing-sdl2) above).
+- **Windows** — the release zip includes `SDL2.dll` next to `speedsx.exe`; extract both to the same folder.
+
+Add release notes on GitHub after the release is created (the workflow only uploads binaries).
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues and pull requests.
