@@ -1008,7 +1008,7 @@ test "path exists check" {
     try std.testing.expect(exists or !exists); // Just verify it doesn't crash
 }
 
-/// Skips when `/home/ale/Downloads/Roland-bkp` (or set `SPDSX_TEST_BACKUP` before running) is not present.
+// Skips when backup path is not present on the machine running tests.
 test "load configuration from backup fixture" {
     const backup_path = "/home/ale/Downloads/Roland-bkp";
 
