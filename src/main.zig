@@ -719,36 +719,34 @@ fn tryOpenProject(app: *App) void {
         return;
     }
 
-    // Check if the path looks like a valid SPD-SX configuration path
-    if (spdsx_io.isValidSpdSxPath(app.io, path)) {
-        // Load from real SPD-SX format
-        if (spdsx_io.loadConfiguration(app.allocator, app.io, path)) |result| {
-            app.project = result.project;
-            app.editor_ui.invalidateSampleUsageCache();
-            app.editor_ui.enterEditor();
-            user_config.saveLastPath(app.io, path); // Remember this path for next startup
-        } else |err| {
-            switch (err) {
-                spdsx_io.SpdSxError.FileNotFound => {
-                    app.editor_ui.setStartupError("SPD-SX configuration not found");
-                },
-                spdsx_io.SpdSxError.InvalidPath => {
-                    app.editor_ui.setStartupError("Invalid path");
-                },
-                spdsx_io.SpdSxError.ReadError => {
-                    app.editor_ui.setStartupError("Error reading configuration");
-                },
-                spdsx_io.SpdSxError.AccessDenied => {
-                    app.editor_ui.setStartupError("Access denied - check permissions");
-                },
-                else => {
-                    app.editor_ui.setStartupError("Error loading SPD-SX configuration");
-                },
-            }
-        }
+    if (!spdsx_io.isValidSpdSxPath(app.io, path)) {
+        app.editor_ui.setStartupError("Directory not found");
+        return;
     }
 
-    app.editor_ui.setStartupError("Directory not found");
+    if (spdsx_io.loadConfiguration(app.allocator, app.io, path, &app.project)) |_| {
+        app.editor_ui.invalidateSampleUsageCache();
+        app.editor_ui.enterEditor();
+        user_config.saveLastPath(app.io, path);
+    } else |err| {
+        switch (err) {
+            spdsx_io.SpdSxError.FileNotFound => {
+                app.editor_ui.setStartupError("SPD-SX configuration not found");
+            },
+            spdsx_io.SpdSxError.InvalidPath => {
+                app.editor_ui.setStartupError("Invalid path");
+            },
+            spdsx_io.SpdSxError.ReadError => {
+                app.editor_ui.setStartupError("Error reading configuration");
+            },
+            spdsx_io.SpdSxError.AccessDenied => {
+                app.editor_ui.setStartupError("Access denied - check permissions");
+            },
+            else => {
+                app.editor_ui.setStartupError("Error loading SPD-SX configuration");
+            },
+        }
+    }
 }
 
 fn startNewProject(app: *App) void {
@@ -793,8 +791,7 @@ fn loadProject(app: *App) void {
 
     // If we have a valid SPD-SX path, load from that
     if (spdsx_io.isValidSpdSxPath(app.io, path)) {
-        if (spdsx_io.loadConfiguration(app.allocator, app.io, path)) |result| {
-            app.project = result.project;
+        if (spdsx_io.loadConfiguration(app.allocator, app.io, path, &app.project)) |_| {
             app.editor_ui.invalidateSampleUsageCache();
             app.editor_ui.showSuccess("Project reloaded");
         } else |_| {

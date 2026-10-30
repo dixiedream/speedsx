@@ -25,9 +25,8 @@ pub const SpdSxError = error{
     AccessDenied,
 };
 
-/// Result of loading SPD-SX configuration
-pub const LoadResult = struct {
-    project: models.Project,
+/// Counts from loading SPD-SX configuration (project is populated in place).
+pub const LoadStats = struct {
     kit_count: usize,
     wave_count: usize,
     chain_count: usize,
@@ -38,10 +37,16 @@ pub const LoadResult = struct {
 const extractRelativeWavePath = cli_paths.extractRelativeWavePath;
 
 /// Load SPD-SX configuration from a path (e.g., /Volumes/SPD-SX_/Roland)
-/// Returns a Project populated with the loaded data
-pub fn loadConfiguration(allocator: Allocator, io: std.Io, base_path: []const u8) SpdSxError!LoadResult {
-    var result = LoadResult{
-        .project = models.Project.init(),
+/// Populates `project` in place to avoid large stack copies.
+pub fn loadConfiguration(
+    allocator: Allocator,
+    io: std.Io,
+    base_path: []const u8,
+    project: *models.Project,
+) SpdSxError!LoadStats {
+    project.* = models.Project.init();
+
+    var stats = LoadStats{
         .kit_count = 0,
         .wave_count = 0,
         .chain_count = 0,
@@ -68,23 +73,23 @@ pub fn loadConfiguration(allocator: Allocator, io: std.Io, base_path: []const u8
     }
 
     // Clear sample library
-    result.project.sample_library = models.SampleLibrary.init();
+    project.sample_library = models.SampleLibrary.init();
 
     // Load waves first (so we can reference them in kits)
-    result.wave_count = loadWaves(allocator, io, actual_path, &result.project.sample_library) catch 0;
+    stats.wave_count = loadWaves(allocator, io, actual_path, &project.sample_library) catch 0;
 
     // Load kits
-    result.kit_count = loadKits(allocator, io, actual_path, &result.project) catch 0;
+    stats.kit_count = loadKits(allocator, io, actual_path, project) catch 0;
 
     // Load kit chains
-    result.chain_count = loadKitChains(allocator, io, actual_path, &result.project.kit_chain_library) catch 0;
+    stats.chain_count = loadKitChains(allocator, io, actual_path, &project.kit_chain_library) catch 0;
 
-    result.tag_count = loadTagList(allocator, io, actual_path, &result.project.tag_library) catch 0;
+    stats.tag_count = loadTagList(allocator, io, actual_path, &project.tag_library) catch 0;
 
     // Set file path
-    result.project.setFilePath(base_path);
+    project.setFilePath(base_path);
 
-    return result;
+    return stats;
 }
 
 /// Load waves from SPD-SX WAVE directory
@@ -1001,6 +1006,21 @@ test "path exists check" {
     const io = threaded.io();
     const exists = cli_paths.pathExists(io, "/tmp");
     try std.testing.expect(exists or !exists); // Just verify it doesn't crash
+}
+
+/// Skips when `/home/ale/Downloads/Roland-bkp` (or set `SPDSX_TEST_BACKUP` before running) is not present.
+test "load configuration from backup fixture" {
+    const backup_path = "/home/ale/Downloads/Roland-bkp";
+
+    var threaded: std.Io.Threaded = .init(std.testing.allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    if (!cli_paths.isValidSpdSxPath(io, backup_path)) return;
+
+    var project = models.Project.init();
+    const stats = try loadConfiguration(std.testing.allocator, io, backup_path, &project);
+    try std.testing.expect(stats.kit_count > 0);
 }
 
 test "pan conversion" {
