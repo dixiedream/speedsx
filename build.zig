@@ -28,6 +28,11 @@ pub fn build(b: *std.Build) void {
             .macos, .windows => .yes,
             else => .force,
         },
+        // MSYS2 ships libSDL2.a and libSDL2.dll.a; pkg-config only lists -lSDL2.
+        // Static SDL2 needs Libs.private (gdi32, winmm, …) from --static, which Zig
+        // does not request. Link the DLL import library so the release zip can ship SDL2.dll.
+        .preferred_link_mode = .dynamic,
+        .search_strategy = if (target.result.os.tag == .windows) .no_fallback else .paths_first,
     };
 
     const translate_c = b.dependency("translate_c", .{});
