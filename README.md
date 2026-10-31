@@ -36,39 +36,85 @@ GitHub Releases ship self-contained archives for each platform. Extract the arch
 
 ## Building from source
 
-### Requirements
+End-user [release archives](#download-release-binaries) bundle SDL2. A **developer build** links against SDL2 on your machine and does not download extra Zig packages at compile time (SDL bindings are vendored in the repo).
 
-- **Zig 0.17.0** (match [CI](.github/workflows/build.yml))
-- **SDL2** development libraries and **pkg-config** (Linux)
+### 1. Install Zig
 
-### Installing SDL2 (developers)
+Use **[Zig 0.17.0](https://ziglang.org/download/)** — the same version as [CI](.github/workflows/build.yml). Other 0.17.x versions may work but are not what we test.
+
+```bash
+zig version   # should report 0.17.0
+```
+
+Install via your package manager only if it ships 0.17.0; otherwise use the official tarball and add `zig` to your `PATH`.
+
+### 2. Install native dependencies
+
+| Platform | Packages / tools |
+|----------|------------------|
+| **Linux** | SDL2 dev headers, **pkg-config** (required — the build uses pkg-config to find SDL2) |
+| **macOS** | SDL2 via Homebrew; Xcode **Command Line Tools** for the linker |
+| **Windows** | [MSYS2](https://www.msys2.org/) MinGW64: `SDL2`, `pkg-config` |
 
 **Arch Linux:**
 ```bash
-sudo pacman -S sdl2 pkgconf
+sudo pacman -S sdl2 pkgconf zig
 ```
 
 **Ubuntu/Debian:**
 ```bash
 sudo apt install libsdl2-dev pkg-config
+# install Zig 0.17.0 separately if apt is too old
 ```
 
 **macOS:**
 ```bash
+xcode-select --install   # if CLT not installed
 brew install sdl2
 ```
 
-**Windows:** MSYS2 MinGW with `mingw-w64-x86_64-SDL2` and `pkg-config` (see CI workflow).
+**Windows (MSYS2):** open **MSYS2 MinGW 64-bit** and run:
+```bash
+pacman -S mingw-w64-x86_64-SDL2 mingw-w64-x86_64-pkg-config
+```
 
-### Build
+Before `zig build` in **Git Bash**, **MSYS2**, or CI-like shells, put MinGW on `PATH` and point pkg-config at SDL2:
+
+```bash
+export PATH="/c/tools/msys64/mingw64/bin:/c/tools/msys64/usr/bin:$PATH"
+export PKG_CONFIG_PATH="/c/tools/msys64/mingw64/lib/pkgconfig"
+```
+
+Adjust paths if MSYS2 is not installed under `C:\tools\msys64`.
+
+### 3. Verify prerequisites
+
+```bash
+zig version
+pkg-config --modversion sdl2    # Linux/macOS/MSYS2 — should print an SDL2 version
+```
+
+If `pkg-config` cannot find SDL2, fix SDL2 dev packages or `PKG_CONFIG_PATH` before building.
+
+### 4. Clone, build, run
 
 ```bash
 git clone https://github.com/dixiedream/speedsx.git
 cd speedsx
 zig build
+./zig-out/bin/speedsx
 ```
 
-The executable will be in `zig-out/bin/speedsx`. A from-source build links against your system SDL2.
+Output binary: `zig-out/bin/speedsx` (or `speedsx.exe` on Windows).
+
+**Clean rebuild** (after pulling binding or build script changes):
+
+```bash
+rm -rf .zig-cache zig-out
+zig build
+```
+
+**Graphical app:** you need a normal desktop session (Wayland/X11 on Linux, macOS window server, Windows desktop). Headless servers are not supported for running the editor.
 
 ### Build options
 
@@ -79,19 +125,19 @@ zig build -Doptimize=ReleaseFast -Dstrip=true
 # Core unit tests (same set CI runs)
 zig build test-core
 
-# Build and run
+# Build and run (forwards CLI args after --)
 zig build run
 ```
 
-Optional integration test with a real SPD-SX backup tree:
+Cross-compiling (example):
 
 ```bash
-SPEEDSX_TEST_FIXTURE=/path/to/Roland zig build test
+zig build -Dtarget=x86_64-windows-gnu    # from Linux, with matching Windows SDL2/pkg-config setup
 ```
 
-### SDL bindings
+### SDL bindings (maintainers)
 
-SDL2 C bindings are vendored under [`src/bindings/`](src/bindings/) (generated once from [`src/sdl2.h`](src/sdl2.h)). To refresh after SDL or Zig header changes, use [`scripts/regenerate-sdl-bindings.sh`](scripts/regenerate-sdl-bindings.sh) and commit the updated files.
+SDL2 Zig bindings live under [`src/bindings/`](src/bindings/). To regenerate from [`src/sdl2.h`](src/sdl2.h) after SDL or toolchain header changes, see [`scripts/regenerate-sdl-bindings.sh`](scripts/regenerate-sdl-bindings.sh) and commit the updated files.
 
 ## Usage
 
