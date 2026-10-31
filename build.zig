@@ -1,6 +1,28 @@
 const std = @import("std");
 const Translator = @import("translate_c").Translator;
 
+fn mingwLibDirFromPkgConfig(b: *std.Build) ?[]const u8 {
+    const pc_env = b.graph.environ_map.get("PKG_CONFIG_PATH") orelse return null;
+    return std.fs.path.dirname(pc_env);
+}
+
+/// MSYS2 MinGW: link SDL2.dll (import lib), not static libSDL2.a; SDL2main is static-only.
+fn linkSdl2Windows(b: *std.Build, mod: *std.Build.Module) void {
+    const no_pkg_config: std.Build.Module.LinkSystemLibraryOptions = .{ .use_pkg_config = .no };
+    if (mingwLibDirFromPkgConfig(b)) |lib_dir| {
+        mod.addLibraryPath(.{ .cwd_relative = lib_dir });
+    }
+    mod.linkSystemLibrary("mingw32", no_pkg_config);
+    mod.linkSystemLibrary("SDL2main", .{
+        .use_pkg_config = .no,
+        .preferred_link_mode = .static,
+    });
+    mod.linkSystemLibrary("SDL2.dll", .{
+        .use_pkg_config = .no,
+        .preferred_link_mode = .dynamic,
+    });
+}
+
 fn linkSdl2MacOS(mod: *std.Build.Module) void {
     const frameworks = [_][]const u8{
         "CoreMedia",
@@ -24,7 +46,10 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const sdl_pkg_config: std.Build.Module.LinkSystemLibraryOptions = .{
-        .use_pkg_config = if (target.result.os.tag == .macos) .yes else .force,
+        .use_pkg_config = switch (target.result.os.tag) {
+            .macos, .windows => .yes,
+            else => .force,
+        },
     };
 
     const translate_c = b.dependency("translate_c", .{});
@@ -45,7 +70,11 @@ pub fn build(b: *std.Build) void {
             .{ .name = "c", .module = translator.mod },
         },
     });
-    root_module.linkSystemLibrary("SDL2", sdl_pkg_config);
+    if (target.result.os.tag == .windows) {
+        linkSdl2Windows(b, root_module);
+    } else {
+        root_module.linkSystemLibrary("SDL2", sdl_pkg_config);
+    }
     root_module.link_libc = true;
     if (target.result.os.tag == .macos) {
         linkSdl2MacOS(root_module);
@@ -55,6 +84,9 @@ pub fn build(b: *std.Build) void {
         .name = "speedsx",
         .root_module = root_module,
     });
+    if (target.result.os.tag == .windows) {
+        exe.subsystem = .windows;
+    }
 
     b.installArtifact(exe);
 
