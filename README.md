@@ -22,21 +22,35 @@ SpeedSX provides a graphical interface for editing Roland SPD-SX configurations 
 - **MIDI Configuration** - Set per-pad MIDI notes, channels, and gate times
 - **Native Performance** - Built with Zig for fast startup and low memory usage
 
-## Requirements
+## Download (release binaries)
 
-- **Zig** 0.17 or later
-- **SDL2** development libraries
+GitHub Releases ship self-contained archives for each platform. Extract the archive and run the executable from that folder:
 
-### Installing SDL2
+- **Linux / macOS** — `speedsx` with SDL2 in `lib/` (no system SDL install required).
+- **Windows** — `speedsx.exe` and `SDL2.dll` in the same folder.
+
+```bash
+./speedsx --help
+./speedsx --version
+```
+
+## Building from source
+
+### Requirements
+
+- **Zig 0.17.0** (match [CI](.github/workflows/build.yml))
+- **SDL2** development libraries and **pkg-config** (Linux)
+
+### Installing SDL2 (developers)
 
 **Arch Linux:**
 ```bash
-sudo pacman -S sdl2
+sudo pacman -S sdl2 pkgconf
 ```
 
 **Ubuntu/Debian:**
 ```bash
-sudo apt install libsdl2-dev
+sudo apt install libsdl2-dev pkg-config
 ```
 
 **macOS:**
@@ -44,24 +58,23 @@ sudo apt install libsdl2-dev
 brew install sdl2
 ```
 
-**Windows:**
-Download SDL2 development libraries from [libsdl.org](https://libsdl.org/) and configure your build environment accordingly.
+**Windows:** MSYS2 MinGW with `mingw-w64-x86_64-SDL2` and `pkg-config` (see CI workflow).
 
-## Building
+### Build
 
 ```bash
-git clone https://github.com/yourusername/speedsx.git
+git clone https://github.com/dixiedream/speedsx.git
 cd speedsx
 zig build
 ```
 
-The executable will be in `zig-out/bin/speedsx`.
+The executable will be in `zig-out/bin/speedsx`. A from-source build links against your system SDL2.
 
-### Build Options
+### Build options
 
 ```bash
-# Release build (optimized)
-zig build -Doptimize=fast
+# Release build (optimized, stripped)
+zig build -Doptimize=ReleaseFast -Dstrip=true
 
 # Run tests
 zig build test
@@ -69,6 +82,16 @@ zig build test
 # Build and run
 zig build run
 ```
+
+Optional integration test with a real SPD-SX backup tree:
+
+```bash
+SPEEDSX_TEST_FIXTURE=/path/to/Roland zig build test
+```
+
+### SDL bindings
+
+SDL2 C bindings are vendored under [`src/bindings/`](src/bindings/) (generated once from [`src/sdl2.h`](src/sdl2.h)). To refresh after SDL or Zig header changes, use [`scripts/regenerate-sdl-bindings.sh`](scripts/regenerate-sdl-bindings.sh) and commit the updated files.
 
 ## Usage
 
@@ -104,21 +127,16 @@ zig build run
 
 ## Releasing
 
-Pushing a version tag triggers a GitHub Actions workflow that builds optimized binaries for Linux (x86_64 and ARM64), macOS (Intel and Apple Silicon), and Windows, then publishes a GitHub Release with downloadable archives.
+Pushing a version tag triggers a GitHub Actions workflow that builds optimized, stripped binaries for Linux (x86_64 and ARM64), macOS (Intel and Apple Silicon), and Windows, bundles SDL2 where needed, and publishes a GitHub Release.
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.2.5
+git push origin v0.2.5
 ```
 
-Use tags matching `v*` (for example `v0.2.0`).
+Use tags matching `v*`. You can also run the workflow manually via **Actions → Zig CI → Run workflow**.
 
-**Runtime dependencies for release binaries:**
-
-- **Linux and macOS** — SDL2 must be installed on the system (same as [Installing SDL2](#installing-sdl2) above).
-- **Windows** — the release zip includes `SDL2.dll` next to `speedsx.exe`; extract both to the same folder.
-
-Add release notes on GitHub after the release is created (the workflow only uploads binaries).
+Add release notes on GitHub after the release is created (the workflow uploads binaries only).
 
 ## Contributing
 

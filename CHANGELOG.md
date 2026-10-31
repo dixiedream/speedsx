@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.5
+- Bundle SDL2 in Linux and macOS release archives for portable binaries.
+- Vendor SDL2 Zig bindings; remove translate_c fetch at build time.
+- CI: clean release builds, strip symbols, smoke tests, workflow_dispatch, all develop PRs.
+- Add `--help` and `--version` CLI flags.
+
 ## v0.2.4
 - Fixing Windows workflow
 

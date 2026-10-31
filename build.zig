@@ -1,5 +1,4 @@
 const std = @import("std");
-const Translator = @import("translate_c").Translator;
 
 fn mingwLibDirFromPkgConfig(b: *std.Build) ?[]const u8 {
     const pc_env = b.graph.environ_map.get("PKG_CONFIG_PATH") orelse return null;
@@ -41,9 +40,34 @@ fn linkSdl2MacOS(mod: *std.Build.Module) void {
     }
 }
 
+fn sdlBindingsModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
+    const c_builtins = b.createModule(.{
+        .root_source_file = b.path("src/bindings/c_builtins.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const helpers = b.createModule(.{
+        .root_source_file = b.path("src/bindings/helpers.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const c_mod = b.createModule(.{
+        .root_source_file = b.path("src/bindings/sdl2.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = &.{
+            .{ .name = "c_builtins", .module = c_builtins },
+            .{ .name = "helpers", .module = helpers },
+        },
+    });
+    return c_mod;
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const strip = b.option(bool, "strip", "Strip debug symbols from the executable") orelse false;
 
     const sdl_pkg_config: std.Build.Module.LinkSystemLibraryOptions = .{
         .use_pkg_config = switch (target.result.os.tag) {
@@ -52,22 +76,14 @@ pub fn build(b: *std.Build) void {
         },
     };
 
-    const translate_c = b.dependency("translate_c", .{});
-    const translator: Translator = .init(translate_c, .{
-        .c_source_file = b.path("src/sdl2.h"),
-        .target = target,
-        .optimize = optimize,
-        .link_system_libs = &.{
-            .{ .name = "SDL2", .options = sdl_pkg_config },
-        },
-    });
+    const c_mod = sdlBindingsModule(b, target, optimize);
 
     const root_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "c", .module = translator.mod },
+            .{ .name = "c", .module = c_mod },
         },
     });
     if (target.result.os.tag == .windows) {
@@ -84,6 +100,7 @@ pub fn build(b: *std.Build) void {
         .name = "speedsx",
         .root_module = root_module,
     });
+    if (strip) root_module.strip = true;
     if (target.result.os.tag == .windows) {
         exe.subsystem = .windows;
     }
