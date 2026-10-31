@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.2.4
+- Fixing Windows workflow
+
 ## v0.2.3
 - Forcing release
 
