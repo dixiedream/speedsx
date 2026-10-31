@@ -114,15 +114,18 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run SpeedSX");
     run_step.dependOn(&run_cmd.step);
 
-    const test_models = b.addTest(.{
+    const test_core_exe = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/models.zig"),
+            .root_source_file = b.path("src/core_tests.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
 
-    const run_tests = b.addRunArtifact(test_models);
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_tests.step);
+    const run_core_tests = b.addRunArtifact(test_core_exe);
+    const test_core_step = b.step("test-core", "Run core unit tests (models, CLI formats)");
+    test_core_step.dependOn(&run_core_tests.step);
+
+    const test_step = b.step("test", "Run core unit tests (alias for test-core)");
+    test_step.dependOn(&run_core_tests.step);
 }

@@ -76,8 +76,8 @@ The executable will be in `zig-out/bin/speedsx`. A from-source build links again
 # Release build (optimized, stripped)
 zig build -Doptimize=ReleaseFast -Dstrip=true
 
-# Run tests
-zig build test
+# Core unit tests (same set CI runs)
+zig build test-core
 
 # Build and run
 zig build run

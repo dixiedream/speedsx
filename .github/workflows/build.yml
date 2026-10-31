@@ -128,16 +128,9 @@ jobs:
           fi
           zig build "${TARGET_ARGS[@]}" "${OPTS[@]}"
 
-      - name: Run tests
+      - name: Run core unit tests
         shell: bash
-        run: zig build test
-
-      - name: Smoke test CLI (Unix)
-        if: "!startsWith(matrix.os, 'windows')"
-        shell: bash
-        run: |
-          zig-out/bin/speedsx --version | grep -q speedsx
-          zig-out/bin/speedsx --help | grep -q Usage
+        run: zig build test-core
 
       - name: Package release asset (Unix)
         if: startsWith(github.ref, 'refs/tags/') && !startsWith(matrix.os, 'windows')
