@@ -33,6 +33,10 @@ case "$os" in
     patchelf --set-rpath '$ORIGIN/lib' "$staging/speedsx"
     ;;
   Darwin)
+    if ! command -v codesign >/dev/null 2>&1; then
+      echo "bundle-sdl.sh: codesign is required on macOS" >&2
+      exit 1
+    fi
     sdl_line="$(otool -L "$staging/speedsx" | grep -i SDL2 | head -1 || true)"
     if [[ -z "$sdl_line" ]]; then
       echo "bundle-sdl.sh: no SDL2 dependency found in binary" >&2
@@ -45,8 +49,12 @@ case "$os" in
     }
     dylib_name="$(basename "$old_path")"
     cp "$old_path" "$staging/lib/$dylib_name"
-    install_name_tool -id "@loader_path/lib/$dylib_name" "$staging/lib/$dylib_name"
+    install_name_tool -id "@loader_path/$dylib_name" "$staging/lib/$dylib_name"
     install_name_tool -change "$old_path" "@loader_path/lib/$dylib_name" "$staging/speedsx"
+    install_name_tool -delete_rpath /opt/homebrew/lib "$staging/speedsx" 2>/dev/null || true
+    install_name_tool -delete_rpath /usr/local/lib "$staging/speedsx" 2>/dev/null || true
+    codesign --force --sign - --timestamp=none "$staging/lib/$dylib_name"
+    codesign --force --sign - --timestamp=none "$staging/speedsx"
     ;;
   *)
     echo "bundle-sdl.sh: unsupported OS: $os" >&2

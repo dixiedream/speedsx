@@ -140,6 +140,9 @@ jobs:
           STAGING="dist/staging-${{ matrix.asset_id }}"
           rm -rf "$STAGING"
           ./scripts/bundle-sdl.sh zig-out/bin/speedsx "$STAGING"
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            "$STAGING/speedsx" --version
+          fi
           mkdir -p dist
           tar -czf "dist/speedsx-${TAG}-${{ matrix.asset_id }}.tar.gz" -C "$STAGING" .
 
