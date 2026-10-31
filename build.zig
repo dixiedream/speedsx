@@ -1,6 +1,28 @@
 const std = @import("std");
 const Translator = @import("translate_c").Translator;
 
+fn mingwLibDirFromPkgConfig(b: *std.Build) ?[]const u8 {
+    const pc_env = b.graph.environ_map.get("PKG_CONFIG_PATH") orelse return null;
+    return std.fs.path.dirname(pc_env);
+}
+
+/// MSYS2 MinGW: link SDL2.dll (import lib), not static libSDL2.a; SDL2main is static-only.
+fn linkSdl2Windows(b: *std.Build, mod: *std.Build.Module) void {
+    const no_pkg_config: std.Build.Module.LinkSystemLibraryOptions = .{ .use_pkg_config = .no };
+    if (mingwLibDirFromPkgConfig(b)) |lib_dir| {
+        mod.addLibraryPath(.{ .cwd_relative = lib_dir });
+    }
+    mod.linkSystemLibrary("mingw32", no_pkg_config);
+    mod.linkSystemLibrary("SDL2main", .{
+        .use_pkg_config = .no,
+        .preferred_link_mode = .static,
+    });
+    mod.linkSystemLibrary("SDL2.dll", .{
+        .use_pkg_config = .no,
+        .preferred_link_mode = .dynamic,
+    });
+}
+
 fn linkSdl2MacOS(mod: *std.Build.Module) void {
     const frameworks = [_][]const u8{
         "CoreMedia",
@@ -28,11 +50,6 @@ pub fn build(b: *std.Build) void {
             .macos, .windows => .yes,
             else => .force,
         },
-        // MSYS2 ships libSDL2.a and libSDL2.dll.a; pkg-config only lists -lSDL2.
-        // Static SDL2 needs Libs.private (gdi32, winmm, …) from --static, which Zig
-        // does not request. Link the DLL import library so the release zip can ship SDL2.dll.
-        .preferred_link_mode = .dynamic,
-        .search_strategy = if (target.result.os.tag == .windows) .no_fallback else .paths_first,
     };
 
     const translate_c = b.dependency("translate_c", .{});
@@ -53,7 +70,11 @@ pub fn build(b: *std.Build) void {
             .{ .name = "c", .module = translator.mod },
         },
     });
-    root_module.linkSystemLibrary("SDL2", sdl_pkg_config);
+    if (target.result.os.tag == .windows) {
+        linkSdl2Windows(b, root_module);
+    } else {
+        root_module.linkSystemLibrary("SDL2", sdl_pkg_config);
+    }
     root_module.link_libc = true;
     if (target.result.os.tag == .macos) {
         linkSdl2MacOS(root_module);
