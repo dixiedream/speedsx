@@ -5,6 +5,7 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [develop]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -61,16 +62,15 @@ jobs:
         with:
           path: |
             ~/.cache/zig
-            zig-cache
-            zig-out
-          key: zig-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('**/*.zig') }}
+            .zig-cache
+          key: zig-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('**/*.zig', 'src/bindings/**') }}
           restore-keys: zig-${{ runner.os }}-${{ matrix.arch }}-
 
       - name: Install SDL2 (Linux)
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libsdl2-dev
+          sudo apt-get install -y pkg-config libsdl2-dev patchelf
 
       - name: Cache Homebrew
         if: startsWith(matrix.os, 'macos')
@@ -105,6 +105,11 @@ jobs:
         with:
           version: 0.17.0
 
+      - name: Clean build directories (release tags)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: rm -rf .zig-cache zig-out
+
       - name: Build
         shell: bash
         env:
@@ -115,7 +120,7 @@ jobs:
           fi
           OPTS=()
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            OPTS+=(-Doptimize=ReleaseFast)
+            OPTS+=(-Doptimize=ReleaseFast -Dstrip=true)
           fi
           TARGET_ARGS=()
           if [[ "${{ matrix.cross_target }}" == "true" ]]; then
@@ -123,13 +128,20 @@ jobs:
           fi
           zig build "${TARGET_ARGS[@]}" "${OPTS[@]}"
 
+      - name: Run core unit tests
+        shell: bash
+        run: zig build test-core
+
       - name: Package release asset (Unix)
         if: startsWith(github.ref, 'refs/tags/') && !startsWith(matrix.os, 'windows')
         shell: bash
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
+          STAGING="dist/staging-${{ matrix.asset_id }}"
+          rm -rf "$STAGING"
+          ./scripts/bundle-sdl.sh zig-out/bin/speedsx "$STAGING"
           mkdir -p dist
-          tar -czf "dist/speedsx-${TAG}-${{ matrix.asset_id }}.tar.gz" -C zig-out/bin speedsx
+          tar -czf "dist/speedsx-${TAG}-${{ matrix.asset_id }}.tar.gz" -C "$STAGING" .
 
       - name: Package release asset (Windows)
         if: startsWith(github.ref, 'refs/tags/') && startsWith(matrix.os, 'windows')
@@ -141,6 +153,15 @@ jobs:
           Copy-Item C:\tools\msys64\mingw64\bin\SDL2.dll staging/
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Compress-Archive -Path staging/* -DestinationPath "dist/speedsx-${tag}-${{ matrix.asset_id }}.zip" -Force
+
+      - name: Smoke test bundled release (Unix)
+        if: startsWith(github.ref, 'refs/tags/') && !startsWith(matrix.os, 'windows')
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          rm -rf /tmp/speedsx-smoke && mkdir -p /tmp/speedsx-smoke
+          tar -xzf "dist/speedsx-${TAG}-${{ matrix.asset_id }}.tar.gz" -C /tmp/speedsx-smoke
+          /tmp/speedsx-smoke/speedsx --version | grep -q speedsx
 
       - name: Upload release artifact
         if: startsWith(github.ref, 'refs/tags/')

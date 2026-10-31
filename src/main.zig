@@ -49,9 +49,42 @@ const App = struct {
     }
 };
 
+const version = "0.2.5";
+
+fn printHelp() void {
+    std.debug.print(
+        \\SpeedSX {s} — Roland SPD-SX configuration editor
+        \\
+        \\Usage: speedsx [options]
+        \\
+        \\Options:
+        \\  -h, --help       Show this help and exit
+        \\  -V, --version    Show version and exit
+        \\
+        \\Release archives include SDL2 libraries; run ./speedsx from the extracted folder.
+        \\
+    , .{version});
+}
+
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
     const io = init.io;
+
+    var args = try std.process.Args.Iterator.initAllocator(init.minimal.args, allocator);
+    defer args.deinit();
+    _ = args.skip();
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            printHelp();
+            return;
+        }
+        if (std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-V")) {
+            std.debug.print("speedsx {s}\n", .{version});
+            return;
+        }
+        std.debug.print("Unknown option: {s} (try --help)\n", .{arg});
+        return error.InvalidArgument;
+    }
 
     // Initialize SDL2 with video, events, and audio
     if (c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_EVENTS | c.SDL_INIT_AUDIO) != 0) {
