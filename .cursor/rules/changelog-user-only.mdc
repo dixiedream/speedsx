@@ -1,0 +1,14 @@
+---
+description: Changelog is maintained by the user; do not edit CHANGELOG.md
+globs: CHANGELOG.md
+alwaysApply: true
+---
+
+# Changelog — user only
+
+Do **not** create, edit, or update [CHANGELOG.md](CHANGELOG.md) unless the user explicitly asks you to change the changelog in that request.
+
+- Do not add release notes, version sections, or bullet lists to CHANGELOG as part of other tasks.
+- If a task would normally include a changelog entry, skip it and mention in your summary that the user can update CHANGELOG when they release.
+
+The user maintains the changelog; that is not the agent’s job in this project.

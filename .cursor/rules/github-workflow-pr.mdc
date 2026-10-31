@@ -1,0 +1,23 @@
+---
+description: Do not change GitHub Actions PR branch gating for Zig CI
+globs: .github/workflows/**
+alwaysApply: true
+---
+
+# GitHub workflow — PR branch rules (do not change)
+
+The `build` job in [`.github/workflows/build.yml`](.github/workflows/build.yml) **must** keep this condition:
+
+```yaml
+if: github.event_name == 'push' || startsWith(github.head_ref, 'feature/')
+```
+
+Meaning:
+
+- **push** events (including version tags) run the matrix.
+- **pull_request** events run only when the head branch name starts with `feature/`.
+- PRs from other branch prefixes (e.g. `develop`, `fix/`, `release/`) do **not** run CI via this job unless pushed or triggered another way the workflow defines.
+
+Do **not** remove, broaden, or replace this `if:` (for example do not run CI on all PRs to `develop`) unless the user explicitly asks to change PR workflow policy in that exact way.
+
+Other workflow edits (packaging, matrix, caches, steps) are fine; leave this gating line intact.

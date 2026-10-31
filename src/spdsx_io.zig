@@ -1008,18 +1008,20 @@ test "path exists check" {
     try std.testing.expect(exists or !exists); // Just verify it doesn't crash
 }
 
-// Skips when backup path is not present on the machine running tests.
+// Skips when SPEEDSX_TEST_FIXTURE is unset or not a valid SPD-SX tree.
 test "load configuration from backup fixture" {
-    const backup_path = "/home/ale/Downloads/Roland-bkp";
+    const backup_path = std.c.getenv("SPEEDSX_TEST_FIXTURE") orelse return;
+    const backup_slice = std.mem.span(backup_path);
+    if (backup_slice.len == 0) return;
 
     var threaded: std.Io.Threaded = .init(std.testing.allocator, .{});
     defer threaded.deinit();
     const io = threaded.io();
 
-    if (!cli_paths.isValidSpdSxPath(io, backup_path)) return;
+    if (!cli_paths.isValidSpdSxPath(io, backup_slice)) return;
 
     var project = models.Project.init();
-    const stats = try loadConfiguration(std.testing.allocator, io, backup_path, &project);
+    const stats = try loadConfiguration(std.testing.allocator, io, backup_slice, &project);
     try std.testing.expect(stats.kit_count > 0);
 }
 
