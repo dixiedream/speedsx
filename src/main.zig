@@ -1044,6 +1044,10 @@ fn draw(app: *App, width: c_int, height: c_int) void {
     const L = ui.Layout;
     const content_y = L.content_y;
 
+    const kit = app.project.currentKit();
+    const pad = kit.getPad(app.editor_ui.selected_pad);
+    ui.processDropdownPopupInput(&app.editor_ui, kit, pad);
+
     // Left panel: Kit Settings (Kit, Main, Mode, Sub, MIDI sections) - scrollable
     const left_panel_height = height - content_y - L.status_bar_height - L.file_bar_height - 20;
     ui.drawKitSettingsPanel(r, &app.editor_ui, L.left_panel_x, content_y + 8, left_panel_height, app.project.currentKit(), app.project.currentKit().getPad(app.editor_ui.selected_pad));
@@ -1164,8 +1168,6 @@ fn draw(app: *App, width: c_int, height: c_int) void {
     }
 
     // Value picker popups (pad/kit enum fields)
-    const kit = app.project.currentKit();
-    const pad = kit.getPad(app.editor_ui.selected_pad);
     ui.drawDropdownPopup(r, &app.editor_ui, kit, pad);
 
     // Draw context menus (on top of most elements)

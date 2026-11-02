@@ -13,6 +13,15 @@ const EditorUI = state.EditorUI;
 const item_h: i32 = 20;
 const max_visible_items: i32 = 8;
 
+fn dropdownPopupHeight(item_count: u8) i32 {
+    const visible: i32 = @min(max_visible_items, @as(i32, @intCast(item_count)));
+    return visible * item_h + 2;
+}
+
+fn consumeDropdownClick(ui: *EditorUI) void {
+    ui.input.mouse_clicked = false;
+}
+
 fn drawDropdownTrigger(
     r: *Renderer,
     ui: *const EditorUI,
@@ -54,7 +63,7 @@ pub fn drawEnumDropdown(
 ) void {
     drawDropdownTrigger(r, ui, field_id, x, y, w, h, labelFn(value.*), label);
 
-    if (ui.isClicked(x, y, w, h)) {
+    if (!ui.isModalOpen() and ui.isClicked(x, y, w, h)) {
         const values = std.enums.values(Enum);
         if (ui.dropdown_popup.open and ui.dropdown_popup.field_id == field_id) {
             ui.closeDropdown();
@@ -79,12 +88,108 @@ pub fn drawBoolDropdown(
     const current_text = if (value.*) "ON" else "OFF";
     drawDropdownTrigger(r, ui, field_id, x, y, w, h, current_text, label);
 
-    if (ui.isClicked(x, y, w, h)) {
+    if (!ui.isModalOpen() and ui.isClicked(x, y, w, h)) {
         if (ui.dropdown_popup.open and ui.dropdown_popup.field_id == field_id) {
             ui.closeDropdown();
         } else {
             ui.openDropdown(field_id, x, y, w, h, 2);
         }
+    }
+}
+
+fn processEnumPopupInputForField(
+    comptime Enum: type,
+    ui: *EditorUI,
+    pop: *types.DropdownPopupState,
+    value: *Enum,
+) void {
+    if (!ui.input.mouse_clicked) return;
+
+    const values = std.enums.values(Enum);
+    const popup_h = dropdownPopupHeight(pop.item_count);
+
+    var i: usize = 0;
+    while (i < values.len) : (i += 1) {
+        const item_y = pop.y + 1 + @as(i32, @intCast(i)) * item_h - pop.scroll;
+        if (item_y + item_h < pop.y or item_y > pop.y + popup_h) continue;
+
+        if (ui.isHovered(pop.x, item_y, pop.w, item_h)) {
+            value.* = values[i];
+            ui.closeDropdown();
+            consumeDropdownClick(ui);
+            return;
+        }
+    }
+
+    const over_popup = ui.isHovered(pop.x, pop.y, pop.w, popup_h);
+    const over_anchor = ui.isHovered(pop.anchor_x, pop.anchor_y, pop.anchor_w, pop.anchor_h);
+    if (over_anchor) {
+        ui.closeDropdown();
+        consumeDropdownClick(ui);
+        return;
+    }
+    if (over_popup) {
+        consumeDropdownClick(ui);
+        return;
+    }
+    ui.closeDropdown();
+    consumeDropdownClick(ui);
+}
+
+fn processBoolPopupInput(ui: *EditorUI, pop: *types.DropdownPopupState, value: *bool) void {
+    if (!ui.input.mouse_clicked) return;
+
+    const popup_h = 2 * item_h + 2;
+    const options_len: usize = 2;
+    var idx: usize = 0;
+    while (idx < options_len) : (idx += 1) {
+        const item_y = pop.y + 1 + @as(i32, @intCast(idx)) * item_h;
+        if (ui.isHovered(pop.x, item_y, pop.w, item_h)) {
+            value.* = idx == 1;
+            ui.closeDropdown();
+            consumeDropdownClick(ui);
+            return;
+        }
+    }
+
+    const over_popup = ui.isHovered(pop.x, pop.y, pop.w, popup_h);
+    const over_anchor = ui.isHovered(pop.anchor_x, pop.anchor_y, pop.anchor_w, pop.anchor_h);
+    if (over_anchor) {
+        ui.closeDropdown();
+        consumeDropdownClick(ui);
+        return;
+    }
+    if (over_popup) {
+        consumeDropdownClick(ui);
+        return;
+    }
+    ui.closeDropdown();
+    consumeDropdownClick(ui);
+}
+
+/// Handle dropdown popup clicks before panel drawing; consumes mouse_clicked when handled
+pub fn processDropdownPopupInput(ui: *EditorUI, kit: *models.Kit, pad: *models.Pad) void {
+    if (!ui.dropdown_popup.open) return;
+    const pop = &ui.dropdown_popup;
+
+    switch (pop.field_id) {
+        .pad_link => processEnumPopupInputForField(models.PadLink, ui, pop, &kit.pad_link),
+        .pad_link_target => processEnumPopupInputForField(models.PadLink, ui, pop, &kit.pad_link_target),
+        .mute_group => processEnumPopupInputForField(models.MuteGroup, ui, pop, &pad.mute_group),
+        .tempo_sync => processEnumPopupInputForField(models.TempoSync, ui, pop, &pad.tempo_sync),
+        .loop_mode => processEnumPopupInputForField(models.LoopMode, ui, pop, &pad.loop_mode),
+        .trigger_mode => processEnumPopupInputForField(models.TriggerMode, ui, pop, &pad.trigger_mode),
+        .dynamics => processEnumPopupInputForField(models.Dynamics, ui, pop, &pad.dynamics),
+        .poly_mono => processEnumPopupInputForField(models.PolyMono, ui, pop, &pad.poly_mono),
+        .output_assign => processEnumPopupInputForField(models.OutputAssign, ui, pop, &pad.output_assign),
+        .reverse => processBoolPopupInput(ui, pop, &pad.reverse),
+        .midi_channel => processEnumPopupInputForField(models.Pad.MidiChannel, ui, pop, &pad.midi_channel),
+        .midi_ext_ctrl => processBoolPopupInput(ui, pop, &pad.midi_ext_ctrl),
+        .fx1_switch => processBoolPopupInput(ui, pop, &kit.fx1_switch),
+        .fx1_type => processEnumPopupInputForField(models.FxType, ui, pop, &kit.fx1_type),
+        .fx2_switch => processBoolPopupInput(ui, pop, &kit.fx2_switch),
+        .fx2_type => processEnumPopupInputForField(models.FxType, ui, pop, &kit.fx2_type),
+        .none => ui.closeDropdown(),
     }
 }
 
@@ -97,8 +202,7 @@ fn drawEnumPopupForField(
     comptime labelFn: fn (Enum) []const u8,
 ) void {
     const values = std.enums.values(Enum);
-    const visible: i32 = @min(max_visible_items, @as(i32, @intCast(values.len)));
-    const popup_h = visible * item_h + 2;
+    const popup_h = dropdownPopupHeight(pop.item_count);
 
     r.fillRect(pop.x + 2, pop.y + 2, pop.w, popup_h, 0x80000000);
     r.fillRect(pop.x, pop.y, pop.w, popup_h, Colors.panel);
@@ -116,20 +220,6 @@ fn drawEnumPopupForField(
         }
         const text_color = if (opt == value.*) Colors.accent else Colors.text;
         r.drawTextSmall(labelFn(opt), pop.x + 8, item_y + 5, text_color);
-
-        if (hovered and ui.input.mouse_clicked) {
-            value.* = opt;
-            ui.closeDropdown();
-            return;
-        }
-    }
-
-    if (ui.input.mouse_clicked) {
-        const over_popup = ui.isHovered(pop.x, pop.y, pop.w, popup_h);
-        const over_anchor = ui.isHovered(pop.anchor_x, pop.anchor_y, pop.anchor_w, pop.anchor_h);
-        if (!over_popup and !over_anchor) {
-            ui.closeDropdown();
-        }
     }
 }
 
@@ -149,19 +239,6 @@ fn drawBoolPopup(r: *Renderer, ui: *EditorUI, pop: *types.DropdownPopupState, va
         const selected = (idx == 1) == value.*;
         const text_color = if (selected) Colors.accent else Colors.text;
         r.drawTextSmall(text, pop.x + 8, item_y + 5, text_color);
-        if (hovered and ui.input.mouse_clicked) {
-            value.* = idx == 1;
-            ui.closeDropdown();
-            return;
-        }
-    }
-
-    if (ui.input.mouse_clicked) {
-        const over_popup = ui.isHovered(pop.x, pop.y, pop.w, popup_h);
-        const over_anchor = ui.isHovered(pop.anchor_x, pop.anchor_y, pop.anchor_w, pop.anchor_h);
-        if (!over_popup and !over_anchor) {
-            ui.closeDropdown();
-        }
     }
 }
 
@@ -240,7 +317,7 @@ fn drawSliderInternal(r: *Renderer, ui: *const EditorUI, x: i32, y: i32, w: i32,
         r.fillRect(x, y, fill_width, h, Colors.slider_fill);
     }
 
-    if (ui.isHovered(x, y, w, h) and ui.input.mouse_down) {
+    if (!ui.isModalOpen() and ui.isHovered(x, y, w, h) and ui.input.mouse_down) {
         const relative_x: f32 = @floatFromInt(ui.input.mouse_x - x);
         const new_normalized = std.math.clamp(relative_x / @as(f32, @floatFromInt(w)), 0, 1);
         value.* = @intFromFloat(new_normalized * range + @as(f32, @floatFromInt(min_val)));
@@ -281,7 +358,7 @@ pub fn drawSignedSlider(r: *Renderer, ui: *const EditorUI, x: i32, y: i32, w: i3
         r.fillRect(fill_x, y, fill_w, h, Colors.slider_fill);
     }
 
-    if (ui.isHovered(x, y, w, h) and ui.input.mouse_down) {
+    if (!ui.isModalOpen() and ui.isHovered(x, y, w, h) and ui.input.mouse_down) {
         const relative_x: f32 = @floatFromInt(ui.input.mouse_x - x);
         const new_normalized = std.math.clamp(relative_x / @as(f32, @floatFromInt(w)), 0, 1);
         value.* = @intFromFloat(new_normalized * range + @as(f32, @floatFromInt(min_val)));

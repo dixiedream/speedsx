@@ -46,6 +46,7 @@ pub const drawSignedSlider = widgets.drawSignedSlider;
 pub const drawEnumDropdown = widgets.drawEnumDropdown;
 pub const drawBoolDropdown = widgets.drawBoolDropdown;
 pub const drawDropdownPopup = widgets.drawDropdownPopup;
+pub const processDropdownPopupInput = widgets.processDropdownPopupInput;
 pub const DropdownFieldId = types.DropdownFieldId;
 pub const drawToggle = widgets.drawToggle;
 pub const lerpColor = widgets.lerpColor;
