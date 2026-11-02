@@ -57,6 +57,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Set release-like CI package id
+        id: ci_pkg
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "release_like=true" >> "$GITHUB_OUTPUT"
+            echo "package_id=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            echo "artifact_kind=release" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_EVENT_NAME" == "pull_request" && "$GITHUB_HEAD_REF" == feature/* ]]; then
+            echo "release_like=true" >> "$GITHUB_OUTPUT"
+            echo "package_id=snapshot-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+            echo "artifact_kind=snapshot" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_like=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Cache Zig
         uses: actions/cache@v5
         with:
@@ -120,8 +136,8 @@ jobs:
         with:
           version: 0.17.0
 
-      - name: Clean build directories (release tags)
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Clean build directories (release-like CI)
+        if: steps.ci_pkg.outputs.release_like == 'true'
         shell: bash
         run: rm -rf .zig-cache zig-out
 
@@ -129,7 +145,7 @@ jobs:
         shell: bash
         run: |
           OPTS=()
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+          if [[ "${{ steps.ci_pkg.outputs.release_like }}" == "true" ]]; then
             OPTS+=(-Doptimize=ReleaseFast -Dstrip=true)
           fi
           TARGET_ARGS=()
@@ -143,10 +159,10 @@ jobs:
         run: zig build test-core
 
       - name: Package release asset (Unix)
-        if: startsWith(github.ref, 'refs/tags/') && !startsWith(matrix.os, 'windows')
+        if: steps.ci_pkg.outputs.release_like == 'true' && !startsWith(matrix.os, 'windows')
         shell: bash
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
+          PKG_ID="${{ steps.ci_pkg.outputs.package_id }}"
           STAGING="dist/staging-${{ matrix.asset_id }}"
           rm -rf "$STAGING"
           ./scripts/bundle-sdl.sh zig-out/bin/speedsx "$STAGING"
@@ -154,24 +170,24 @@ jobs:
             "$STAGING/speedsx" --version
           fi
           mkdir -p dist
-          tar -czf "dist/speedsx-${TAG}-${{ matrix.asset_id }}.tar.gz" -C "$STAGING" .
+          tar -czf "dist/speedsx-${PKG_ID}-${{ matrix.asset_id }}.tar.gz" -C "$STAGING" .
 
       - name: Package release asset (Windows)
-        if: startsWith(github.ref, 'refs/tags/') && startsWith(matrix.os, 'windows')
+        if: steps.ci_pkg.outputs.release_like == 'true' && startsWith(matrix.os, 'windows')
         shell: pwsh
         run: |
-          $tag = $env:GITHUB_REF -replace 'refs/tags/', ''
+          $pkgId = "${{ steps.ci_pkg.outputs.package_id }}"
           New-Item -ItemType Directory -Force -Path staging | Out-Null
           Copy-Item zig-out/bin/speedsx.exe staging/
           Copy-Item "$env:MSYS2_ROOT\mingw64\bin\SDL2.dll" staging/
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Compress-Archive -Path staging/* -DestinationPath "dist/speedsx-${tag}-${{ matrix.asset_id }}.zip" -Force
+          Compress-Archive -Path staging/* -DestinationPath "dist/speedsx-${pkgId}-${{ matrix.asset_id }}.zip" -Force
 
       - name: Upload release artifact
-        if: startsWith(github.ref, 'refs/tags/')
+        if: steps.ci_pkg.outputs.release_like == 'true'
         uses: actions/upload-artifact@v6
         with:
-          name: release-${{ matrix.asset_id }}
+          name: ${{ steps.ci_pkg.outputs.artifact_kind }}-${{ matrix.asset_id }}
           path: dist/speedsx-*
 
   release:
