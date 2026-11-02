@@ -86,19 +86,34 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: brew install sdl2
 
-      - name: Cache MSYS2
-        if: startsWith(matrix.os, 'windows')
-        uses: actions/cache@v5
-        with:
-          path: C:\tools\msys64\var\cache\pacman\pkg
-          key: msys2-${{ runner.os }}-${{ hashFiles('**/build.zig') }}
-
       - name: Install SDL2 (Windows)
         if: startsWith(matrix.os, 'windows')
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-pkg-config
+
+      - name: Configure MSYS2 environment
+        if: startsWith(matrix.os, 'windows')
+        shell: bash
         run: |
-          choco install msys2 --no-progress
-          C:\tools\msys64\usr\bin\bash -lc "pacman -Sy --noconfirm mingw-w64-x86_64-SDL2 mingw-w64-x86_64-pkg-config"
-        shell: powershell
+          MSYS2="${{ steps.msys2.outputs.msys2-location }}"
+          echo "MSYS2_ROOT=$MSYS2" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=${MSYS2//\\//}/mingw64/lib/pkgconfig" >> "$GITHUB_ENV"
+          if command -v cygpath >/dev/null 2>&1; then
+            MSYS2_UNIX="$(cygpath -u "$MSYS2")"
+          else
+            drive="${MSYS2:0:1}"
+            rest="${MSYS2:2}"
+            rest="${rest//\\//}"
+            MSYS2_UNIX="/${drive,,}${rest}"
+          fi
+          echo "${MSYS2_UNIX}/mingw64/bin" >> "$GITHUB_PATH"
+          echo "${MSYS2_UNIX}/usr/bin" >> "$GITHUB_PATH"
 
       - name: Install Zig
         uses: mlugg/setup-zig@v2
@@ -112,12 +127,7 @@ jobs:
 
       - name: Build
         shell: bash
-        env:
-          PKG_CONFIG_PATH: ${{ matrix.cross_target && 'C:/tools/msys64/mingw64/lib/pkgconfig' || '' }}
         run: |
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            export PATH="/c/tools/msys64/mingw64/bin:/c/tools/msys64/usr/bin:$PATH"
-          fi
           OPTS=()
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             OPTS+=(-Doptimize=ReleaseFast -Dstrip=true)
@@ -153,7 +163,7 @@ jobs:
           $tag = $env:GITHUB_REF -replace 'refs/tags/', ''
           New-Item -ItemType Directory -Force -Path staging | Out-Null
           Copy-Item zig-out/bin/speedsx.exe staging/
-          Copy-Item C:\tools\msys64\mingw64\bin\SDL2.dll staging/
+          Copy-Item "$env:MSYS2_ROOT\mingw64\bin\SDL2.dll" staging/
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Compress-Archive -Path staging/* -DestinationPath "dist/speedsx-${tag}-${{ matrix.asset_id }}.zip" -Force
 
