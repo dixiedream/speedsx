@@ -179,9 +179,7 @@ jobs:
             set -x
             # GNU timeout is not on macOS runners; perl alarm is available everywhere.
             run_with_timeout() {
-              local limit="$1"
-              shift
-              perl -e 'alarm shift; exec @ARGV or die "exec failed: $!\n"' "$limit" "$@" \
+              perl -e 'alarm shift; exec @ARGV or die "exec failed: $!\n"' 300 "$@" \
                 || { echo "Timed out or failed: $*" >&2; exit 1; }
             }
             KEYCHAIN="$RUNNER_TEMP/build.keychain"
