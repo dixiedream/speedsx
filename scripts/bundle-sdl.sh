@@ -49,12 +49,18 @@ case "$os" in
     }
     dylib_name="$(basename "$old_path")"
     cp "$old_path" "$staging/lib/$dylib_name"
+    codesign --remove-signature "$staging/speedsx" 2>/dev/null || true
+    codesign --remove-signature "$staging/lib/$dylib_name" 2>/dev/null || true
     install_name_tool -id "@loader_path/$dylib_name" "$staging/lib/$dylib_name"
     install_name_tool -change "$old_path" "@loader_path/lib/$dylib_name" "$staging/speedsx"
     install_name_tool -delete_rpath /opt/homebrew/lib "$staging/speedsx" 2>/dev/null || true
     install_name_tool -delete_rpath /usr/local/lib "$staging/speedsx" 2>/dev/null || true
-    codesign --force --sign - --timestamp=none "$staging/lib/$dylib_name"
-    codesign --force --sign - --timestamp=none "$staging/speedsx"
+    codesign_args=(--force --sign - --timestamp=none)
+    if [[ -n "${CODESIGN_KEYCHAIN:-}" ]]; then
+      codesign_args+=(--keychain "$CODESIGN_KEYCHAIN")
+    fi
+    codesign "${codesign_args[@]}" "$staging/lib/$dylib_name"
+    codesign "${codesign_args[@]}" "$staging/speedsx"
     ;;
   *)
     echo "bundle-sdl.sh: unsupported OS: $os" >&2

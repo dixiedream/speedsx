@@ -88,15 +88,24 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pkg-config libsdl2-dev patchelf
 
-      - name: Cache Homebrew
-        if: startsWith(matrix.os, 'macos')
+      - name: Cache Homebrew (macOS Apple Silicon)
+        if: matrix.os == 'macos-latest'
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/Library/Caches/Homebrew
+            /opt/homebrew
+          key: brew-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('**/build.zig') }}
+
+      - name: Cache Homebrew (macOS Intel)
+        if: matrix.os == 'macos-15-intel'
         uses: actions/cache@v5
         with:
           path: |
             ~/Library/Caches/Homebrew
             /usr/local/Homebrew
-            /opt/homebrew
-          key: brew-${{ runner.os }}-${{ hashFiles('**/build.zig') }}
+            /usr/local/Cellar
+          key: brew-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('**/build.zig') }}
 
       - name: Install SDL2 (macOS)
         if: startsWith(matrix.os, 'macos')
@@ -165,12 +174,27 @@ jobs:
           PKG_ID="${{ steps.ci_pkg.outputs.package_id }}"
           STAGING="dist/staging-${{ matrix.asset_id }}"
           rm -rf "$STAGING"
-          ./scripts/bundle-sdl.sh zig-out/bin/speedsx "$STAGING"
+
           if [[ "${{ runner.os }}" == "macOS" ]]; then
-            "$STAGING/speedsx" --version
+            set -x
+            run_with_timeout() {
+              timeout 300 "$@" || { echo "Timed out or failed: $*" >&2; exit 1; }
+            }
+            KEYCHAIN="$RUNNER_TEMP/build.keychain"
+            security create-keychain -p "" "$KEYCHAIN"
+            security set-keychain-settings -lut 3600 "$KEYCHAIN"
+            security unlock-keychain -p "" "$KEYCHAIN"
+            security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+            export CODESIGN_KEYCHAIN="$KEYCHAIN"
+            run_with_timeout ./scripts/bundle-sdl.sh zig-out/bin/speedsx "$STAGING"
+            run_with_timeout "$STAGING/speedsx" --version
+            mkdir -p dist
+            run_with_timeout tar -czf "dist/speedsx-${PKG_ID}-${{ matrix.asset_id }}.tar.gz" -C "$STAGING" .
+          else
+            ./scripts/bundle-sdl.sh zig-out/bin/speedsx "$STAGING"
+            mkdir -p dist
+            tar -czf "dist/speedsx-${PKG_ID}-${{ matrix.asset_id }}.tar.gz" -C "$STAGING" .
           fi
-          mkdir -p dist
-          tar -czf "dist/speedsx-${PKG_ID}-${{ matrix.asset_id }}.tar.gz" -C "$STAGING" .
 
       - name: Package release asset (Windows)
         if: steps.ci_pkg.outputs.release_like == 'true' && startsWith(matrix.os, 'windows')
