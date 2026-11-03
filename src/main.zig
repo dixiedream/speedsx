@@ -808,6 +808,7 @@ fn saveProject(app: *App) void {
             app.editor_ui.showError("Failed to save SPD-SX configuration");
             return;
         };
+        user_config.saveLastPath(app.io, path);
         app.editor_ui.showSuccess("Project saved");
         return;
     }
@@ -819,6 +820,7 @@ fn saveProject(app: *App) void {
             app.editor_ui.showError("Failed to save project");
             return;
         };
+        user_config.saveLastPath(app.io, path);
         app.editor_ui.showSuccess("Project saved");
         return;
     }

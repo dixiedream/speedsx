@@ -86,8 +86,8 @@ pub fn loadConfiguration(
 
     stats.tag_count = loadTagList(allocator, io, actual_path, &project.tag_library) catch 0;
 
-    // Set file path
-    project.setFilePath(base_path);
+    // Set file path to where configuration was loaded from
+    project.setFilePath(actual_path);
 
     return stats;
 }
@@ -449,6 +449,13 @@ fn convertCliPadToUiPad(_: Allocator, cli_pad: *const cli_types.Pad, ui_pad: *mo
     }
 
     ui_pad.enabled = true;
+}
+
+/// Load then save in place (for headless round-trip verification).
+pub fn loadAndSaveInPlace(allocator: Allocator, io: std.Io, base_path: []const u8) SpdSxError!void {
+    var project = models.Project.init();
+    _ = try loadConfiguration(allocator, io, base_path, &project);
+    try saveConfiguration(allocator, io, &project, base_path);
 }
 
 /// Save SPD-SX configuration to a path
@@ -997,6 +1004,7 @@ fn writeWavFile(io: std.Io, path: []const u8, data: []const u8, data_len: u32, s
     var file_writer = file.writer(io, &write_buf);
     file_writer.interface.writeAll(&header) catch return error.WriteError;
     file_writer.interface.writeAll(data) catch return error.WriteError;
+    file_writer.interface.flush() catch return error.WriteError;
 }
 
 // Tests
@@ -1023,6 +1031,105 @@ test "load configuration from backup fixture" {
     var project = models.Project.init();
     const stats = try loadConfiguration(std.testing.allocator, io, backup_slice, &project);
     try std.testing.expect(stats.kit_count > 0);
+}
+
+fn countOccurrences(haystack: []const u8, needle: []const u8) usize {
+    var count: usize = 0;
+    var start: usize = 0;
+    while (std.mem.indexOfPos(u8, haystack, start, needle)) |idx| {
+        count += 1;
+        start = idx + needle.len;
+    }
+    return count;
+}
+
+fn copyFixtureTree(allocator: std.mem.Allocator, io: std.Io, src_root: []const u8, dest_root: []const u8) !void {
+    var src_buf: [512]u8 = undefined;
+    const src = try std.fmt.bufPrint(&src_buf, "{s}/.", .{src_root});
+
+    const argv = [_][]const u8{ "cp", "-a", "--", src, dest_root };
+    const result = try std.process.run(allocator, io, .{ .argv = &argv });
+    defer {
+        allocator.free(result.stdout);
+        allocator.free(result.stderr);
+    }
+    if (!result.term.success()) return error.CopyFailed;
+}
+
+// Skips when fixture path is missing or not a valid SPD-SX tree.
+test "no-op save preserves sysparam system sections" {
+    const default_fixture = "/home/ale/Downloads/Roland";
+    const backup_slice: []const u8 = blk: {
+        if (std.c.getenv("SPEEDSX_TEST_FIXTURE")) |p| {
+            const s = std.mem.span(p);
+            if (s.len > 0) break :blk s;
+        }
+        break :blk default_fixture;
+    };
+
+    var threaded: std.Io.Threaded = .init(std.testing.allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+    const allocator = std.testing.allocator;
+
+    if (!cli_paths.isValidSpdSxPath(io, backup_slice)) return;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const save_base = try tmp_dir.dir.realPathFileAlloc(io, ".", allocator);
+    defer allocator.free(save_base);
+
+    try copyFixtureTree(allocator, io, backup_slice, save_base);
+
+    var path_buf: [512]u8 = undefined;
+    const sysparam_path = cli_paths.getSysparamPath(&path_buf, save_base) orelse return error.TestExpectedEqual;
+
+    const before_save = try cli_xml.readFileContents(allocator, io, sysparam_path, 1024 * 1024);
+    defer allocator.free(before_save);
+
+    const chain_open = std.mem.indexOf(u8, before_save, "<KitChainPrm>") orelse return error.TestExpectedEqual;
+    const chains_before = countOccurrences(before_save, "<KitChain>");
+
+    var project = models.Project.init();
+    const stats = try loadConfiguration(allocator, io, save_base, &project);
+    try std.testing.expect(stats.kit_count > 0);
+
+    try saveConfiguration(allocator, io, &project, save_base);
+
+    const after_save = try cli_xml.readFileContents(allocator, io, sysparam_path, 1024 * 1024);
+    defer allocator.free(after_save);
+
+    try std.testing.expect(std.mem.indexOf(u8, after_save, "<SetupPrm>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, after_save, "<MEfctPrm>") != null);
+    try std.testing.expectEqual(chains_before, countOccurrences(after_save, "<KitChain>"));
+
+    const chain_open_after = std.mem.indexOf(u8, after_save, "<KitChainPrm>") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqualStrings(before_save[0..chain_open], after_save[0..chain_open_after]);
+
+    const mefct_open = "<MEfctPrm>";
+    const mefct_before = std.mem.indexOf(u8, before_save, mefct_open) orelse return error.TestExpectedEqual;
+    const mefct_after = std.mem.indexOf(u8, after_save, mefct_open) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqualStrings(before_save[mefct_before..], after_save[mefct_after..]);
+
+    const kit_path = cli_paths.getKitFilePath(&path_buf, save_base, 0) orelse return error.TestExpectedEqual;
+    const kit = try cli_xml.parseKitFile(allocator, io, kit_path);
+    try std.testing.expectEqual(project.kits[0].master_volume, kit.level);
+}
+
+// Optional: SPEEDSX_VERIFY_DIR=<spdsx-root-with-SPD-SX-child> zig build test
+test "in-place verify when SPEEDSX_VERIFY_DIR is set" {
+    const dir_ptr = std.c.getenv("SPEEDSX_VERIFY_DIR") orelse return;
+    const dir = std.mem.span(dir_ptr);
+    if (dir.len == 0) return;
+
+    var threaded: std.Io.Threaded = .init(std.testing.allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    if (!cli_paths.isValidSpdSxPath(io, dir)) return;
+
+    try loadAndSaveInPlace(std.testing.allocator, io, dir);
 }
 
 test "pan conversion" {
