@@ -13,6 +13,10 @@ const Config = struct {
     title: [*:0]const u8 = "SpeedSX",
 };
 
+/// Cap the main loop when VSync does not block SDL_RenderPresent (common on Linux).
+const TARGET_FPS: u64 = 60;
+const TARGET_FRAME_MS: u64 = 1000 / TARGET_FPS;
+
 const App = struct {
     project: models.Project,
     editor_ui: ui.EditorUI,
@@ -120,6 +124,8 @@ pub fn main(init: std.process.Init) !void {
     };
     defer c.SDL_DestroyRenderer(sdl_renderer);
 
+    _ = c.SDL_RenderSetVSync(sdl_renderer, 1);
+
     // Enable alpha blending
     _ = c.SDL_SetRenderDrawBlendMode(sdl_renderer, c.SDL_BLENDMODE_BLEND);
 
@@ -138,9 +144,9 @@ pub fn main(init: std.process.Init) !void {
     // Main loop
     var event: c.SDL_Event = undefined;
     while (app.running) {
-        const current_time: u64 = @intCast(c.SDL_GetTicks64());
-        const delta: f32 = @as(f32, @floatFromInt(current_time - app.last_time)) / 1000.0;
-        app.last_time = current_time;
+        const frame_start: u64 = @intCast(c.SDL_GetTicks64());
+        const delta: f32 = @as(f32, @floatFromInt(frame_start - app.last_time)) / 1000.0;
+        app.last_time = frame_start;
 
         // Reset per-frame state
         app.editor_ui.input.mouse_clicked = false;
@@ -232,6 +238,12 @@ pub fn main(init: std.process.Init) !void {
 
         // Draw
         draw(&app, width, height);
+
+        const frame_end: u64 = @intCast(c.SDL_GetTicks64());
+        if (frame_end - frame_start < TARGET_FRAME_MS) {
+            const delay_ms: u32 = @intCast(TARGET_FRAME_MS - (frame_end - frame_start));
+            c.SDL_Delay(delay_ms);
+        }
     }
 }
 
