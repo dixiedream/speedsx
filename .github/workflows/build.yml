@@ -57,6 +57,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Set release-like CI package id
+        id: ci_pkg
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "release_like=true" >> "$GITHUB_OUTPUT"
+            echo "package_id=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            echo "artifact_kind=release" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_EVENT_NAME" == "pull_request" && "$GITHUB_HEAD_REF" == feature/* ]]; then
+            echo "release_like=true" >> "$GITHUB_OUTPUT"
+            echo "package_id=snapshot-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+            echo "artifact_kind=snapshot" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_like=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Cache Zig
         uses: actions/cache@v5
         with:
@@ -72,54 +88,73 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pkg-config libsdl2-dev patchelf
 
-      - name: Cache Homebrew
-        if: startsWith(matrix.os, 'macos')
+      - name: Cache Homebrew (macOS Apple Silicon)
+        if: matrix.os == 'macos-latest'
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/Library/Caches/Homebrew
+            /opt/homebrew
+          key: brew-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('**/build.zig') }}
+
+      - name: Cache Homebrew (macOS Intel)
+        if: matrix.os == 'macos-15-intel'
         uses: actions/cache@v5
         with:
           path: |
             ~/Library/Caches/Homebrew
             /usr/local/Homebrew
-            /opt/homebrew
-          key: brew-${{ runner.os }}-${{ hashFiles('**/build.zig') }}
+            /usr/local/Cellar
+          key: brew-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('**/build.zig') }}
 
       - name: Install SDL2 (macOS)
         if: startsWith(matrix.os, 'macos')
         run: brew install sdl2
 
-      - name: Cache MSYS2
-        if: startsWith(matrix.os, 'windows')
-        uses: actions/cache@v5
-        with:
-          path: C:\tools\msys64\var\cache\pacman\pkg
-          key: msys2-${{ runner.os }}-${{ hashFiles('**/build.zig') }}
-
       - name: Install SDL2 (Windows)
         if: startsWith(matrix.os, 'windows')
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-pkg-config
+
+      - name: Configure MSYS2 environment
+        if: startsWith(matrix.os, 'windows')
+        shell: bash
         run: |
-          choco install msys2 --no-progress
-          C:\tools\msys64\usr\bin\bash -lc "pacman -Sy --noconfirm mingw-w64-x86_64-SDL2 mingw-w64-x86_64-pkg-config"
-        shell: powershell
+          MSYS2="${{ steps.msys2.outputs.msys2-location }}"
+          echo "MSYS2_ROOT=$MSYS2" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=${MSYS2//\\//}/mingw64/lib/pkgconfig" >> "$GITHUB_ENV"
+          if command -v cygpath >/dev/null 2>&1; then
+            MSYS2_UNIX="$(cygpath -u "$MSYS2")"
+          else
+            drive="${MSYS2:0:1}"
+            rest="${MSYS2:2}"
+            rest="${rest//\\//}"
+            MSYS2_UNIX="/${drive,,}${rest}"
+          fi
+          echo "${MSYS2_UNIX}/mingw64/bin" >> "$GITHUB_PATH"
+          echo "${MSYS2_UNIX}/usr/bin" >> "$GITHUB_PATH"
 
       - name: Install Zig
         uses: mlugg/setup-zig@v2
         with:
           version: 0.17.0
 
-      - name: Clean build directories (release tags)
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Clean build directories (release-like CI)
+        if: steps.ci_pkg.outputs.release_like == 'true'
         shell: bash
         run: rm -rf .zig-cache zig-out
 
       - name: Build
         shell: bash
-        env:
-          PKG_CONFIG_PATH: ${{ matrix.cross_target && 'C:/tools/msys64/mingw64/lib/pkgconfig' || '' }}
         run: |
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            export PATH="/c/tools/msys64/mingw64/bin:/c/tools/msys64/usr/bin:$PATH"
-          fi
           OPTS=()
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+          if [[ "${{ steps.ci_pkg.outputs.release_like }}" == "true" ]]; then
             OPTS+=(-Doptimize=ReleaseFast -Dstrip=true)
           fi
           TARGET_ARGS=()
@@ -133,32 +168,52 @@ jobs:
         run: zig build test-core
 
       - name: Package release asset (Unix)
-        if: startsWith(github.ref, 'refs/tags/') && !startsWith(matrix.os, 'windows')
+        if: steps.ci_pkg.outputs.release_like == 'true' && !startsWith(matrix.os, 'windows')
         shell: bash
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
+          PKG_ID="${{ steps.ci_pkg.outputs.package_id }}"
           STAGING="dist/staging-${{ matrix.asset_id }}"
           rm -rf "$STAGING"
-          ./scripts/bundle-sdl.sh zig-out/bin/speedsx "$STAGING"
-          mkdir -p dist
-          tar -czf "dist/speedsx-${TAG}-${{ matrix.asset_id }}.tar.gz" -C "$STAGING" .
+
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            set -x
+            # GNU timeout is not on macOS runners; perl alarm is available everywhere.
+            run_with_timeout() {
+              perl -e 'alarm shift; exec @ARGV or die "exec failed: $!\n"' 300 "$@" \
+                || { echo "Timed out or failed: $*" >&2; exit 1; }
+            }
+            KEYCHAIN="$RUNNER_TEMP/build.keychain"
+            security create-keychain -p "" "$KEYCHAIN"
+            security set-keychain-settings -lut 3600 "$KEYCHAIN"
+            security unlock-keychain -p "" "$KEYCHAIN"
+            security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+            export CODESIGN_KEYCHAIN="$KEYCHAIN"
+            run_with_timeout ./scripts/bundle-sdl.sh zig-out/bin/speedsx "$STAGING"
+            run_with_timeout "$STAGING/speedsx" --version
+            mkdir -p dist
+            run_with_timeout tar -czf "dist/speedsx-${PKG_ID}-${{ matrix.asset_id }}.tar.gz" -C "$STAGING" .
+          else
+            ./scripts/bundle-sdl.sh zig-out/bin/speedsx "$STAGING"
+            mkdir -p dist
+            tar -czf "dist/speedsx-${PKG_ID}-${{ matrix.asset_id }}.tar.gz" -C "$STAGING" .
+          fi
 
       - name: Package release asset (Windows)
-        if: startsWith(github.ref, 'refs/tags/') && startsWith(matrix.os, 'windows')
+        if: steps.ci_pkg.outputs.release_like == 'true' && startsWith(matrix.os, 'windows')
         shell: pwsh
         run: |
-          $tag = $env:GITHUB_REF -replace 'refs/tags/', ''
+          $pkgId = "${{ steps.ci_pkg.outputs.package_id }}"
           New-Item -ItemType Directory -Force -Path staging | Out-Null
           Copy-Item zig-out/bin/speedsx.exe staging/
-          Copy-Item C:\tools\msys64\mingw64\bin\SDL2.dll staging/
+          Copy-Item "$env:MSYS2_ROOT\mingw64\bin\SDL2.dll" staging/
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Compress-Archive -Path staging/* -DestinationPath "dist/speedsx-${tag}-${{ matrix.asset_id }}.zip" -Force
+          Compress-Archive -Path staging/* -DestinationPath "dist/speedsx-${pkgId}-${{ matrix.asset_id }}.zip" -Force
 
       - name: Upload release artifact
-        if: startsWith(github.ref, 'refs/tags/')
+        if: steps.ci_pkg.outputs.release_like == 'true'
         uses: actions/upload-artifact@v6
         with:
-          name: release-${{ matrix.asset_id }}
+          name: ${{ steps.ci_pkg.outputs.artifact_kind }}-${{ matrix.asset_id }}
           path: dist/speedsx-*
 
   release:

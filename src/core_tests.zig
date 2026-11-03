@@ -8,6 +8,8 @@ const _types = @import("cli/types.zig");
 const _paths = @import("cli/paths.zig");
 const _storage = @import("cli/storage.zig");
 const _xml = @import("cli/xml.zig");
+const _xml_writer = @import("cli/xml_writer.zig");
+const _spdsx_io = @import("spdsx_io.zig");
 
 comptime {
     _ = _models;
@@ -19,4 +21,6 @@ comptime {
     _ = _paths;
     _ = _storage;
     _ = _xml;
+    _ = _xml_writer;
+    _ = _spdsx_io;
 }

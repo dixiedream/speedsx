@@ -225,6 +225,11 @@ fn getChildValue(element: *const XmlElement, name: []const u8, comptime T: type,
     return default;
 }
 
+/// Read entire file into memory (for merge/splice on save).
+pub fn readFileContents(allocator: Allocator, io: std.Io, file_path: []const u8, max: usize) ![]u8 {
+    return readFileAlloc(allocator, io, file_path, max);
+}
+
 fn readFileAlloc(allocator: Allocator, io: std.Io, file_path: []const u8, max: usize) ![]u8 {
     const file = std.Io.Dir.openFileAbsolute(io, file_path, .{}) catch |err| {
         if (err == error.FileNotFound) return error.FileNotFound;

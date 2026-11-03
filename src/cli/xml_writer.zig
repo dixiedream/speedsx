@@ -17,18 +17,19 @@ pub const WriteError = error{
 
 /// XML Writer helper
 pub const XmlWriter = struct {
-    io: std.Io,
-    file: std.Io.File,
-    write_buf: []u8,
+    out: *std.Io.Writer,
     indent_level: usize = 0,
 
-    pub fn init(io: std.Io, file: std.Io.File, write_buf: []u8) XmlWriter {
-        return .{ .io = io, .file = file, .write_buf = write_buf };
+    pub fn init(out: *std.Io.Writer) XmlWriter {
+        return .{ .out = out };
+    }
+
+    pub fn flush(self: *XmlWriter) WriteError!void {
+        try self.out.flush();
     }
 
     fn writeBytes(self: *XmlWriter, bytes: []const u8) !void {
-        var file_writer = self.file.writer(self.io, self.write_buf);
-        try file_writer.interface.writeAll(bytes);
+        try self.out.writeAll(bytes);
     }
 
     fn writeIndent(self: *XmlWriter) !void {
@@ -78,8 +79,10 @@ pub fn writeKitFile(io: std.Io, kit: *const Kit, file_path: []const u8) !void {
     defer file.close(io);
 
     var write_buf: [4096]u8 = undefined;
-    var writer = XmlWriter.init(io, file, &write_buf);
+    var file_writer = std.Io.File.Writer.init(file, io, &write_buf);
+    var writer = XmlWriter.init(&file_writer.interface);
     try writeKit(&writer, kit);
+    try writer.flush();
 }
 
 /// Write kit data using XmlWriter
@@ -212,8 +215,10 @@ pub fn writeWaveFile(io: std.Io, wave: *const Wave, file_path: []const u8) !void
     defer file.close(io);
 
     var write_buf: [4096]u8 = undefined;
-    var writer = XmlWriter.init(io, file, &write_buf);
+    var file_writer = std.Io.File.Writer.init(file, io, &write_buf);
+    var writer = XmlWriter.init(&file_writer.interface);
     try writeWave(&writer, wave);
+    try writer.flush();
 }
 
 /// Write wave data using XmlWriter
@@ -251,7 +256,8 @@ pub fn writeTagListFile(io: std.Io, tags: []const TagListEntry, file_path: []con
     defer file.close(io);
 
     var write_buf: [4096]u8 = undefined;
-    var writer = XmlWriter.init(io, file, &write_buf);
+    var file_writer = std.Io.File.Writer.init(file, io, &write_buf);
+    var writer = XmlWriter.init(&file_writer.interface);
 
     try writer.openTag("TagList");
 
@@ -276,16 +282,30 @@ pub fn writeTagListFile(io: std.Io, tags: []const TagListEntry, file_path: []con
     }
 
     try writer.closeTag("TagList");
+    try writer.flush();
 }
 
-/// Write kit chains to sysparam.spd
-pub fn writeKitChainFile(io: std.Io, chains: []const KitChain, file_path: []const u8) !void {
-    const file = try std.Io.Dir.createFileAbsolute(io, file_path, .{});
-    defer file.close(io);
+const xml = @import("xml.zig");
 
-    var write_buf: [4096]u8 = undefined;
-    var writer = XmlWriter.init(io, file, &write_buf);
+const kit_chain_open = "<KitChainPrm>";
+const kit_chain_close = "</KitChainPrm>";
 
+/// Replace only the KitChainPrm section, preserving SetupPrm, MEfctPrm, etc.
+pub fn replaceKitChainPrmSection(allocator: Allocator, existing: []const u8, new_section: []const u8) ![]u8 {
+    const start = std.mem.indexOf(u8, existing, kit_chain_open) orelse {
+        return try allocator.dupe(u8, new_section);
+    };
+    const tail = existing[start..];
+    const close_rel = std.mem.indexOf(u8, tail, kit_chain_close) orelse {
+        return try allocator.dupe(u8, new_section);
+    };
+    const end = start + close_rel + kit_chain_close.len;
+
+    const merged = try std.mem.concat(allocator, u8, &.{ existing[0..start], new_section, existing[end..] });
+    return merged;
+}
+
+fn writeKitChainPrm(writer: *XmlWriter, chains: []const KitChain) !void {
     try writer.openTag("KitChainPrm");
 
     for (chains) |*chain| {
@@ -329,6 +349,44 @@ pub fn writeKitChainFile(io: std.Io, chains: []const KitChain, file_path: []cons
     try writer.closeTag("KitChainPrm");
 }
 
+/// Format KitChainPrm XML into an allocated buffer.
+pub fn formatKitChainPrm(allocator: Allocator, chains: []const KitChain) ![]u8 {
+    var allocating = std.Io.Writer.Allocating.init(allocator);
+    defer allocating.deinit();
+
+    var writer = XmlWriter.init(&allocating.writer);
+    try writeKitChainPrm(&writer, chains);
+    return allocating.toOwnedSlice();
+}
+
+fn writeFileContents(io: std.Io, file_path: []const u8, data: []const u8) !void {
+    const file = try std.Io.Dir.createFileAbsolute(io, file_path, .{});
+    defer file.close(io);
+
+    var write_buf: [4096]u8 = undefined;
+    var file_writer = std.Io.File.Writer.init(file, io, &write_buf);
+    try file_writer.interface.writeAll(data);
+    try file_writer.interface.flush();
+}
+
+/// Write kit chains to sysparam.spd, preserving other top-level sections when present.
+pub fn writeKitChainFile(allocator: Allocator, io: std.Io, chains: []const KitChain, file_path: []const u8) !void {
+    const new_section = try formatKitChainPrm(allocator, chains);
+    defer allocator.free(new_section);
+
+    const merged = blk: {
+        const existing = xml.readFileContents(allocator, io, file_path, 1024 * 1024) catch |err| switch (err) {
+            error.FileNotFound => break :blk try allocator.dupe(u8, new_section),
+            else => return err,
+        };
+        defer allocator.free(existing);
+        break :blk try replaceKitChainPrmSection(allocator, existing, new_section);
+    };
+    defer allocator.free(merged);
+
+    try writeFileContents(io, file_path, merged);
+}
+
 /// Export entire configuration to SPD-SX directory structure
 pub fn exportConfiguration(io: std.Io, data_store: *const storage.DataStore, base_path: []const u8, allocator: Allocator) !void {
     // Create directory structure
@@ -344,10 +402,8 @@ pub fn exportConfiguration(io: std.Io, data_store: *const storage.DataStore, bas
     // Write kits
     for (data_store.kits.getAll(), 0..) |*kit, i| {
         var filename_buf: [512]u8 = undefined;
-        const filename = std.fmt.bufPrint(&filename_buf, "{s}/kit{d:0>3}.spd", .{ kit_dir, i }) catch continue;
-        writeKitFile(io, kit, filename) catch |err| {
-            std.debug.print("Error writing kit {d}: {}\n", .{ i, err });
-        };
+        const filename = try std.fmt.bufPrint(&filename_buf, "{s}/kit{d:0>3}.spd", .{ kit_dir, i });
+        try writeKitFile(io, kit, filename);
     }
 
     // Write waves
@@ -358,29 +414,69 @@ pub fn exportConfiguration(io: std.Io, data_store: *const storage.DataStore, bas
         std.Io.Dir.createDirPath(.cwd(), io, wave_dir) catch {};
 
         var filename_buf: [512]u8 = undefined;
-        const filename = std.fmt.bufPrint(&filename_buf, "{s}/{d:0>2}.spd", .{ wave_dir, wave.wave_id % 100 }) catch continue;
-        writeWaveFile(io, wave, filename) catch |err| {
-            std.debug.print("Error writing wave {d}: {}\n", .{ wave.wave_id, err });
-        };
+        const filename = try std.fmt.bufPrint(&filename_buf, "{s}/{d:0>2}.spd", .{ wave_dir, wave.wave_id % 100 });
+        try writeWaveFile(io, wave, filename);
     }
 
     // Write tag list
     const tag_file = try std.fmt.allocPrint(allocator, "{s}/tag_list.spd", .{system_dir});
     defer allocator.free(tag_file);
-    writeTagListFile(io, data_store.tags.getAll(), tag_file) catch |err| {
-        std.debug.print("Error writing tag list: {}\n", .{err});
-    };
+    try writeTagListFile(io, data_store.tags.getAll(), tag_file);
 
     // Write kit chains
     const chain_file = try std.fmt.allocPrint(allocator, "{s}/sysparam.spd", .{system_dir});
     defer allocator.free(chain_file);
-    writeKitChainFile(io, data_store.kit_chains.getAll(), chain_file) catch |err| {
-        std.debug.print("Error writing kit chains: {}\n", .{err});
-    };
+    try writeKitChainFile(allocator, io, data_store.kit_chains.getAll(), chain_file);
 }
 
-// Tests
-test "XmlWriter basic usage" {
-    // Cannot easily test file-based writer without temp files
-    // Integration tests should cover this functionality
+test "replaceKitChainPrmSection preserves surrounding sysparam content" {
+    const allocator = std.testing.allocator;
+    const existing =
+        \\<SetupPrm>
+        \\<StartupKit>5</StartupKit>
+        \\</SetupPrm>
+        \\<KitChainPrm>
+        \\<KitChain><Stp0>1</Stp0></KitChain>
+        \\</KitChainPrm>
+        \\<MEfctPrm></MEfctPrm>
+    ;
+    const new_section =
+        \\<KitChainPrm>
+        \\<KitChain><Stp0>2</Stp0></KitChain>
+        \\</KitChainPrm>
+    ;
+
+    const merged = try replaceKitChainPrmSection(allocator, existing, new_section);
+    defer allocator.free(merged);
+
+    try std.testing.expect(std.mem.startsWith(u8, merged, "<SetupPrm>"));
+    try std.testing.expect(std.mem.indexOf(u8, merged, "<StartupKit>5</StartupKit>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, merged, "<Stp0>2</Stp0>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, merged, "<MEfctPrm>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, merged, "<Stp0>1</Stp0>") == null);
+}
+
+test "writeKitFile persists non-empty kit XML" {
+    var threaded: std.Io.Threaded = .init(std.testing.allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const base_path = try tmp_dir.dir.realPathFileAlloc(io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(base_path);
+
+    const kit_file_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/kit000.spd", .{base_path});
+    defer std.testing.allocator.free(kit_file_path);
+
+    var kit = Kit.init();
+    kit.level = 100;
+    kit.tempo = 1200;
+
+    try writeKitFile(io, &kit, kit_file_path);
+
+    const parsed = try xml.parseKitFile(std.testing.allocator, io, kit_file_path);
+    try std.testing.expectEqual(@as(u8, 100), parsed.level);
+    try std.testing.expectEqual(@as(u16, 1200), parsed.tempo);
 }

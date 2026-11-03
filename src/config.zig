@@ -98,6 +98,7 @@ pub fn save(io: std.Io, user_cfg: *const UserConfig) void {
         var file_write_buf: [4096]u8 = undefined;
         var file_writer = file.writer(io, &file_write_buf);
         file_writer.interface.writeAll(line) catch {};
+        file_writer.interface.flush() catch {};
     }
 }
 
