@@ -26,7 +26,8 @@ SpeedSX provides a graphical interface for editing Roland SPD-SX configurations 
 
 GitHub Releases ship self-contained archives for each platform. Extract the archive and run the executable from that folder:
 
-- **Linux / macOS** — `speedsx` with SDL2 in `lib/` (no system SDL install required).
+- **Linux** — `speedsx` with SDL2 in `lib/` (no system SDL install required).
+- **macOS** — `speedsx` with SDL2 in `lib/` and SDL3 dylibs beside the binary (Homebrew sdl2-compat needs both; no system install required).
 - **Windows** — `speedsx.exe` and `SDL2.dll` in the same folder.
 
 ```bash
@@ -36,7 +37,7 @@ GitHub Releases ship self-contained archives for each platform. Extract the arch
 
 ## Building from source
 
-End-user [release archives](#download-release-binaries) bundle SDL2. A **developer build** links against SDL2 on your machine and does not download extra Zig packages at compile time (SDL bindings are vendored in the repo).
+End-user [release archives](#download-release-binaries) bundle SDL2 (and on macOS, SDL3 for sdl2-compat). A **developer build** links against SDL2 on your machine and does not download extra Zig packages at compile time (SDL bindings are vendored in the repo).
 
 ### 1. Install Zig
 

@@ -1,14 +1,23 @@
 ---
-description: User owns all git commits and pushes in this repo
+description: Agent must never run git in this repo
 alwaysApply: true
 ---
 
-# Git — user only
+# Git — agent never
 
-Do **not** run `git commit`, `git push`, or any other command that creates or updates commits or remotes for this repository.
+Do **not** run **any** git command in this repository. The user owns all version control.
 
-- Implement code and workflow changes locally; leave changes unstaged or staged for the user to review.
-- Do not amend, rebase, merge, tag, or open PRs unless the user explicitly asks for that specific git/GitHub action.
-- If the task would normally end with “commit and push,” stop after the code changes and tell the user what to commit when they are ready.
+Forbidden examples (not exhaustive):
 
-The user commits and pushes; that is not the agent’s job in this project.
+- `git status`, `git diff`, `git log`, `git show`, `git branch`
+- `git add`, `git commit`, `git push`, `git pull`, `git fetch`
+- `git checkout`, `git switch`, `git stash`, `git merge`, `git rebase`, `git tag`
+- `git reset`, `git cherry-pick`, or any other `git` subcommand
+
+Also do **not** amend, rebase, merge, tag, or open/update PRs via git or `gh` unless the user explicitly asks for that **exact** git/GitHub action in that request.
+
+- Implement code and workflow changes locally; leave the working tree for the user to review.
+- Describe what changed and what the user should run (e.g. commit message suggestions) without inspecting git yourself.
+- If a task would normally use git (status, diff, commit, push, branch, PR), stop after the non-git work and hand off to the user.
+
+The user runs git; that is not the agent’s job in this project.

@@ -179,7 +179,9 @@ jobs:
             set -x
             # GNU timeout is not on macOS runners; perl alarm is available everywhere.
             run_with_timeout() {
-              perl -e 'alarm shift; exec @ARGV or die "exec failed: $!\n"' 300 "$@" \
+              local limit="$1"
+              shift
+              perl -e 'alarm shift; exec @ARGV or die "exec failed: $!\n"' "$limit" "$@" \
                 || { echo "Timed out or failed: $*" >&2; exit 1; }
             }
             KEYCHAIN="$RUNNER_TEMP/build.keychain"
@@ -188,10 +190,14 @@ jobs:
             security unlock-keychain -p "" "$KEYCHAIN"
             security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
             export CODESIGN_KEYCHAIN="$KEYCHAIN"
-            run_with_timeout ./scripts/bundle-sdl.sh zig-out/bin/speedsx "$STAGING"
-            run_with_timeout "$STAGING/speedsx" --version
+            run_with_timeout 300 ./scripts/bundle-sdl.sh zig-out/bin/speedsx "$STAGING"
+            if [[ ! -f "$STAGING/libSDL3.dylib" && ! -f "$STAGING/libSDL3.0.dylib" ]]; then
+              echo "Missing bundled SDL3 dylib (required for Homebrew sdl2-compat)" >&2
+              exit 1
+            fi
+            run_with_timeout 30 "$STAGING/speedsx" --version
             mkdir -p dist
-            run_with_timeout tar -czf "dist/speedsx-${PKG_ID}-${{ matrix.asset_id }}.tar.gz" -C "$STAGING" .
+            run_with_timeout 120 tar -czf "dist/speedsx-${PKG_ID}-${{ matrix.asset_id }}.tar.gz" -C "$STAGING" .
           else
             ./scripts/bundle-sdl.sh zig-out/bin/speedsx "$STAGING"
             mkdir -p dist

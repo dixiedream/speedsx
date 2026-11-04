@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bundle SDL2 shared libraries next to the SpeedSX executable for portable releases.
+# Bundle SDL2 (and on macOS, SDL3 for Homebrew sdl2-compat) for portable releases.
 # Usage: bundle-sdl.sh <executable> <staging_dir>
 set -euo pipefail
 
@@ -59,6 +59,27 @@ case "$os" in
     if [[ -n "${CODESIGN_KEYCHAIN:-}" ]]; then
       codesign_args+=(--keychain "$CODESIGN_KEYCHAIN")
     fi
+
+    # Homebrew's sdl2 formula is sdl2-compat; it dlopen's SDL3 from @loader_path/ (exe dir).
+    brew_opt="$(dirname "$(dirname "$(dirname "$old_path")")")"
+    sdl3_lib="$brew_opt/sdl3/lib"
+    copied_sdl3=0
+    if [[ -d "$sdl3_lib" ]]; then
+      for sdl3_name in libSDL3.dylib libSDL3.0.dylib; do
+        if [[ -f "$sdl3_lib/$sdl3_name" ]]; then
+          cp -L "$sdl3_lib/$sdl3_name" "$staging/$sdl3_name"
+          codesign --remove-signature "$staging/$sdl3_name" 2>/dev/null || true
+          codesign "${codesign_args[@]}" "$staging/$sdl3_name"
+          copied_sdl3=1
+        fi
+      done
+      if [[ "$copied_sdl3" -eq 0 ]]; then
+        echo "bundle-sdl.sh: Homebrew sdl3 at $sdl3_lib but no libSDL3.dylib or libSDL3.0.dylib" >&2
+        echo "bundle-sdl.sh: macOS releases need SDL3 when linking against sdl2-compat (brew install sdl2)" >&2
+        exit 1
+      fi
+    fi
+
     codesign "${codesign_args[@]}" "$staging/lib/$dylib_name"
     codesign "${codesign_args[@]}" "$staging/speedsx"
     ;;
