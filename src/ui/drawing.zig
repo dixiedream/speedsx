@@ -1243,16 +1243,23 @@ pub fn applyDropFromLibrary(ui: *EditorUI, kit: *models.Kit, library: *models.Sa
         return false;
     };
 
-    const pad = kit.getPad(ui.drag.drop_target_pad);
+    const pad: *models.Pad = switch (ui.drag.drop_target) {
+        .kit_settings_main_wave, .kit_settings_sub_wave => kit.getPad(ui.selected_pad),
+        .pad_main, .pad_sub => kit.getPad(ui.drag.drop_target_pad),
+        .none => {
+            ui.cancelDrag();
+            return false;
+        },
+    };
     const wave_name = sample.getName();
     const wave_path = sample.getPath();
 
     switch (ui.drag.drop_target) {
-        .pad_main => {
+        .pad_main, .kit_settings_main_wave => {
             pad.loadSample(wave_name, wave_path);
             ui.invalidateSampleUsageCache();
         },
-        .pad_sub => {
+        .pad_sub, .kit_settings_sub_wave => {
             pad.loadSubSample(wave_name, wave_path);
             ui.invalidateSampleUsageCache();
         },

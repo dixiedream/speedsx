@@ -387,13 +387,17 @@ pub fn drawToggle(r: *Renderer, ui: *const EditorUI, x: i32, y: i32, value: *boo
     r.fillRect(knob_x, y + 2, toggle_h - 4, toggle_h - 4, Colors.text);
 }
 
-/// Draw text box (read-only display)
-pub fn drawTextBox(r: *Renderer, ui: *const EditorUI, x: i32, y: i32, w: i32, h: i32, text: []const u8) void {
+/// Draw text box (read-only display). When `is_active_drop`, show accent while dragging over this drop zone.
+pub fn drawTextBox(r: *Renderer, ui: *const EditorUI, x: i32, y: i32, w: i32, h: i32, text: []const u8, is_active_drop: bool) void {
     const hovered = ui.isHovered(x, y, w, h);
-    const bg_color = if (hovered) Colors.panel_light else Colors.slider_bg;
+    var bg_color = if (hovered) Colors.panel_light else Colors.slider_bg;
+    if (is_active_drop) {
+        bg_color = Colors.accent_dark;
+    }
 
     r.drawRoundedRect(x, y, w, h, bg_color, true);
-    r.drawRoundedRect(x, y, w, h, Colors.border, false);
+    const border_col = if (is_active_drop) Colors.accent else Colors.border;
+    r.drawRoundedRect(x, y, w, h, border_col, false);
 
     const display_len = @min(text.len, 20);
     const display_text = if (text.len > 0) text[0..display_len] else "-";

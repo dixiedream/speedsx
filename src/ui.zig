@@ -173,7 +173,7 @@ pub fn drawPadGrid(r: *Renderer, ui: *EditorUI, x: i32, y: i32, kit: *models.Kit
         }
     }
 
-    if (ui.isDragging() and !any_pad_hovered) {
+    if (ui.isDragging() and !any_pad_hovered and !ui.pointerOverKitSettingsWaveDropZones()) {
         ui.clearDropTarget();
     }
 }
@@ -319,6 +319,8 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     const panel_w: i32 = 200;
     const content_height: i32 = 1350;
 
+    ui.kit_settings_wave_drop_zones.reset();
+
     // Store bounds for scroll detection
     ui.scroll.left_panel_bounds = .{ .x = x - 5, .y = y, .w = panel_w + 10, .h = panel_height };
     ui.scroll.left_panel_max_scroll = @max(0, content_height - panel_height);
@@ -405,7 +407,25 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     if (isVisible(draw_y, 38, y, panel_height)) {
         r.drawTextSmall("Wave", x, draw_y, Colors.text_dim);
         const wave_name = if (pad.has_sample) pad.sample.getName() else "";
-        drawTextBox(r, ui, x, draw_y + 10, panel_w - 10, 20, wave_name);
+        const box_x = x;
+        const box_y = draw_y + 10;
+        const box_w = panel_w - 10;
+        const box_h: i32 = 20;
+        const modal_blocking = ui.isModalOpen();
+        const drag_drop_active = ui.isDragging() and !modal_blocking;
+        var main_wave_active_drop = false;
+        if (drag_drop_active and ui.isHovered(box_x, box_y, box_w, box_h)) {
+            ui.setDropTarget(.kit_settings_main_wave, ui.selected_pad);
+            main_wave_active_drop = true;
+        }
+        if (!modal_blocking) {
+            ui.kit_settings_wave_drop_zones.main_valid = true;
+            ui.kit_settings_wave_drop_zones.main_x = box_x;
+            ui.kit_settings_wave_drop_zones.main_y = box_y;
+            ui.kit_settings_wave_drop_zones.main_w = box_w;
+            ui.kit_settings_wave_drop_zones.main_h = box_h;
+        }
+        drawTextBox(r, ui, box_x, box_y, box_w, box_h, wave_name, main_wave_active_drop);
     }
     content_y += 38;
 
@@ -513,7 +533,25 @@ pub fn drawKitSettingsPanel(r: *Renderer, ui: *EditorUI, x: i32, y: i32, panel_h
     if (isVisible(draw_y, 38, y, panel_height)) {
         r.drawTextSmall("SubWave", x, draw_y, Colors.text_dim);
         const sub_wave_name = if (pad.has_sub_sample) pad.sub_sample.getName() else "";
-        drawTextBox(r, ui, x, draw_y + 10, panel_w - 10, 20, sub_wave_name);
+        const sub_box_x = x;
+        const sub_box_y = draw_y + 10;
+        const sub_box_w = panel_w - 10;
+        const sub_box_h: i32 = 20;
+        const modal_blocking_sub = ui.isModalOpen();
+        const drag_drop_active_sub = ui.isDragging() and !modal_blocking_sub;
+        var sub_wave_active_drop = false;
+        if (drag_drop_active_sub and ui.isHovered(sub_box_x, sub_box_y, sub_box_w, sub_box_h)) {
+            ui.setDropTarget(.kit_settings_sub_wave, ui.selected_pad);
+            sub_wave_active_drop = true;
+        }
+        if (!modal_blocking_sub) {
+            ui.kit_settings_wave_drop_zones.sub_valid = true;
+            ui.kit_settings_wave_drop_zones.sub_x = sub_box_x;
+            ui.kit_settings_wave_drop_zones.sub_y = sub_box_y;
+            ui.kit_settings_wave_drop_zones.sub_w = sub_box_w;
+            ui.kit_settings_wave_drop_zones.sub_h = sub_box_h;
+        }
+        drawTextBox(r, ui, sub_box_x, sub_box_y, sub_box_w, sub_box_h, sub_wave_name, sub_wave_active_drop);
     }
     content_y += 38;
 

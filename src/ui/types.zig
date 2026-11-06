@@ -103,6 +103,29 @@ pub const DropTarget = enum {
     none,
     pad_main, // Drop as main wave
     pad_sub, // Drop as sub wave
+    /// Left panel Main "Wave" field — uses `EditorUI.selected_pad`
+    kit_settings_main_wave,
+    /// Left panel "SubWave" field — uses `EditorUI.selected_pad`
+    kit_settings_sub_wave,
+};
+
+/// Screen rects for Wave / SubWave drop zones in kit settings (updated each frame while visible)
+pub const KitSettingsWaveDropZones = struct {
+    main_valid: bool = false,
+    main_x: i32 = 0,
+    main_y: i32 = 0,
+    main_w: i32 = 0,
+    main_h: i32 = 0,
+    sub_valid: bool = false,
+    sub_x: i32 = 0,
+    sub_y: i32 = 0,
+    sub_w: i32 = 0,
+    sub_h: i32 = 0,
+
+    pub fn reset(self: *KitSettingsWaveDropZones) void {
+        self.main_valid = false;
+        self.sub_valid = false;
+    }
 };
 
 /// Application state enum

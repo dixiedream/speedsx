@@ -63,6 +63,7 @@ pub const EditorUI = struct {
     sample_browser: SampleBrowserState = .{},
     wave_editor: WaveEditorState = .{},
     file_drop: FileDropState = .{},
+    kit_settings_wave_drop_zones: types.KitSettingsWaveDropZones = .{},
 
     // Sample usage cache (avoids recalculating every frame)
     sample_usage_cache: [models.SampleLibrary.MAX_SAMPLES]bool = @splat(false),
@@ -426,6 +427,14 @@ pub const EditorUI = struct {
     fn isInBounds(self: *const EditorUI, bounds: ScrollBounds) bool {
         return self.input.mouse_x >= bounds.x and self.input.mouse_x < bounds.x + bounds.w and
             self.input.mouse_y >= bounds.y and self.input.mouse_y < bounds.y + bounds.h;
+    }
+
+    /// True if the pointer is over a visible kit-settings Wave or SubWave drop box
+    pub fn pointerOverKitSettingsWaveDropZones(self: *const EditorUI) bool {
+        const z = &self.kit_settings_wave_drop_zones;
+        if (z.main_valid and self.isHovered(z.main_x, z.main_y, z.main_w, z.main_h)) return true;
+        if (z.sub_valid and self.isHovered(z.sub_x, z.sub_y, z.sub_w, z.sub_h)) return true;
+        return false;
     }
 
     /// Open context menu for a pad at current mouse position
