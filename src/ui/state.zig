@@ -611,13 +611,34 @@ pub const EditorUI = struct {
     /// Clear sample browser file list
     pub fn clearSampleBrowserFiles(self: *EditorUI) void {
         self.sample_browser.file_count = 0;
-        self.sample_browser.selected = 0;
+        self.sample_browser.sel_start = 0;
+        self.sample_browser.sel_end = 0;
+        self.sample_browser.shift_anchor = 0;
         self.sample_browser.scroll = 0;
     }
 
     /// Get selected sample file entry
     pub fn getSelectedSampleFile(self: *const EditorUI) ?*const SampleFileEntry {
         return self.sample_browser.getSelectedFile();
+    }
+
+    /// Scroll the sample browser list so the given row index is visible (matches drawSampleBrowser list dimensions)
+    pub fn ensureSampleBrowserRowVisible(self: *EditorUI, row: u16) void {
+        const sb = &self.sample_browser;
+        if (sb.file_count == 0) return;
+        const list_h: i32 = 240;
+        const item_h: i32 = 18;
+        const total_items: i32 = @intCast(sb.file_count);
+        const total_content_height = total_items * item_h;
+        sb.max_scroll = @max(0, total_content_height - list_h);
+        const r = @min(row, sb.file_count - 1);
+        const item_top = @as(i32, @intCast(r)) * item_h;
+        if (item_top < sb.scroll) {
+            sb.scroll = item_top;
+        } else if (item_top + item_h > sb.scroll + list_h) {
+            sb.scroll = item_top + item_h - list_h;
+        }
+        sb.scroll = std.math.clamp(sb.scroll, 0, sb.max_scroll);
     }
 
     /// Open sample browser (initializes path to home directory if not set)

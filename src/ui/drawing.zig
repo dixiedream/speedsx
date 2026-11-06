@@ -1,5 +1,7 @@
 /// Additional drawing functions for UI panels, modals, and complex components
 const std = @import("std");
+const sdl = @import("../sdl.zig");
+const c = sdl.c;
 const models = @import("../models.zig");
 const types = @import("types.zig");
 const renderer = @import("renderer.zig");
@@ -343,7 +345,8 @@ pub fn drawSampleBrowser(r: *Renderer, ui: *EditorUI, center_x: i32, center_y: i
             if (fitem_y + item_h < list_y or fitem_y >= list_y + list_h) continue;
 
             const file = &ui.sample_browser.files[i];
-            const is_selected = ui.sample_browser.selected == i;
+            const sb = &ui.sample_browser;
+            const is_selected = i >= sb.sel_start and i <= sb.sel_end;
             const item_hovered = ui.isHovered(list_x + 2, fitem_y, list_w - 12, item_h) and
                 fitem_y >= list_y and fitem_y + item_h <= list_y + list_h;
 
@@ -360,20 +363,35 @@ pub fn drawSampleBrowser(r: *Renderer, ui: *EditorUI, center_x: i32, center_y: i
             r.drawTextSmall(file_name[0..display_len], list_x + 18, fitem_y + 4, Colors.text);
 
             if (item_hovered and ui.isClicked(list_x + 2, fitem_y, list_w - 12, item_h)) {
-                ui.sample_browser.selected = i;
+                const shift = (ui.input.key_mod & @as(u16, @intCast(c.KMOD_SHIFT))) != 0;
+                if (shift and sb.file_count > 0) {
+                    const low = @min(sb.shift_anchor, i);
+                    const high = @max(sb.shift_anchor, i);
+                    sb.sel_start = low;
+                    sb.sel_end = high;
+                    ui.ensureSampleBrowserRowVisible(i);
+                } else {
+                    sb.shift_anchor = i;
+                    sb.sel_start = i;
+                    sb.sel_end = i;
+                    ui.ensureSampleBrowserRowVisible(i);
+                }
             }
         }
     }
 
     current_y = list_y + list_h + 10;
 
-    const btn_w: i32 = 90;
+    const btn_w: i32 = 78;
     const btn_h: i32 = 28;
-    const btn_gap: i32 = 10;
-    const total_btn_w = btn_w * 3 + btn_gap * 2;
+    const btn_gap: i32 = 6;
+    const total_btn_w = btn_w * 4 + btn_gap * 3;
     const btn_x = x + @divFloor(modal_w - total_btn_w, 2);
 
-    const has_selection = ui.sample_browser.file_count > 0 and ui.sample_browser.selected < ui.sample_browser.file_count;
+    const sb2 = &ui.sample_browser;
+    const has_selection = sb2.file_count > 0 and sb2.sel_start < sb2.file_count and
+        sb2.sel_end < sb2.file_count and sb2.sel_start <= sb2.sel_end;
+    const has_files = sb2.file_count > 0;
     if (drawGreenButton(r, ui, btn_x, current_y, btn_w, btn_h, "Play", has_selection)) {
         action.play_selected = true;
     }
@@ -382,7 +400,11 @@ pub fn drawSampleBrowser(r: *Renderer, ui: *EditorUI, center_x: i32, center_y: i
         action.load_selected = true;
     }
 
-    if (drawButton(r, ui, btn_x + (btn_w + btn_gap) * 2, current_y, btn_w, btn_h, "Cancel", true)) {
+    if (drawButton(r, ui, btn_x + (btn_w + btn_gap) * 2, current_y, btn_w, btn_h, "Load all", has_files)) {
+        action.load_all = true;
+    }
+
+    if (drawButton(r, ui, btn_x + (btn_w + btn_gap) * 3, current_y, btn_w, btn_h, "Cancel", true)) {
         action.close = true;
     }
 

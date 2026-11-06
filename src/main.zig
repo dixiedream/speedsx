@@ -29,6 +29,8 @@ const App = struct {
     io: std.Io,
     audio_player: audio.AudioPlayer,
     current_sample: audio.AudioSample,
+    import_batch_success_msg: [128]u8 = @splat(0),
+    import_batch_success_msg_len: usize = 0,
 
     pub fn init(sdl_renderer: *c.SDL_Renderer, allocator: std.mem.Allocator, io: std.Io) App {
         return App{
@@ -43,6 +45,8 @@ const App = struct {
             .io = io,
             .audio_player = audio.AudioPlayer.init(allocator),
             .current_sample = audio.AudioSample{},
+            .import_batch_success_msg = @splat(0),
+            .import_batch_success_msg_len = 0,
         };
     }
 
@@ -151,6 +155,7 @@ pub fn main(init: std.process.Init) !void {
         // Reset per-frame state
         app.editor_ui.input.mouse_clicked = false;
         app.editor_ui.input.mouse_right_clicked = false;
+        app.editor_ui.input.key_mod = @intCast(c.SDL_GetModState() & 0xFFFF);
         app.editor_ui.beginFrame();
 
         // Handle events
@@ -162,6 +167,7 @@ pub fn main(init: std.process.Init) !void {
                 c.SDL_MOUSEMOTION => {
                     app.editor_ui.input.mouse_x = event.motion.x;
                     app.editor_ui.input.mouse_y = event.motion.y;
+                    app.editor_ui.input.key_mod = @intCast(c.SDL_GetModState() & 0xFFFF);
                     // Update drag state
                     app.editor_ui.updateDrag();
                 },
@@ -169,6 +175,7 @@ pub fn main(init: std.process.Init) !void {
                     if (event.button.button == c.SDL_BUTTON_LEFT) {
                         app.editor_ui.input.mouse_down = true;
                         app.editor_ui.input.mouse_clicked = true;
+                        app.editor_ui.input.key_mod = @intCast(c.SDL_GetModState() & 0xFFFF);
 
                         // Close context menu on left click outside it
                         if (app.editor_ui.context_menu.open) {
@@ -199,6 +206,7 @@ pub fn main(init: std.process.Init) !void {
                     }
                 },
                 c.SDL_KEYDOWN => {
+                    app.editor_ui.input.key_mod = @intCast(event.key.keysym.mod & 0xFFFF);
                     handleKeyDown(&app, event.key.keysym);
                 },
                 c.SDL_TEXTINPUT => {
@@ -551,19 +559,31 @@ fn handleKeyDown(app: *App, keysym: c.SDL_Keysym) void {
 
     // Handle sample browser keyboard shortcuts
     if (app.editor_ui.show_sample_browser) {
+        const sb = &app.editor_ui.sample_browser;
         switch (keysym.sym) {
             c.SDLK_ESCAPE => {
                 app.editor_ui.closeSampleBrowser();
                 app.audio_player.stop();
             },
             c.SDLK_UP => {
-                if (app.editor_ui.sample_browser.selected > 0) {
-                    app.editor_ui.sample_browser.selected -= 1;
+                if (sb.file_count > 0) {
+                    if (sb.shift_anchor > 0) {
+                        sb.shift_anchor -= 1;
+                    }
+                    sb.sel_start = sb.shift_anchor;
+                    sb.sel_end = sb.shift_anchor;
+                    app.editor_ui.ensureSampleBrowserRowVisible(sb.shift_anchor);
                 }
             },
             c.SDLK_DOWN => {
-                if (app.editor_ui.sample_browser.selected < app.editor_ui.sample_browser.file_count -| 1) {
-                    app.editor_ui.sample_browser.selected += 1;
+                if (sb.file_count > 0) {
+                    const max_i = sb.file_count - 1;
+                    if (sb.shift_anchor < max_i) {
+                        sb.shift_anchor += 1;
+                    }
+                    sb.sel_start = sb.shift_anchor;
+                    sb.sel_end = sb.shift_anchor;
+                    app.editor_ui.ensureSampleBrowserRowVisible(sb.shift_anchor);
                 }
             },
             c.SDLK_RETURN, c.SDLK_KP_ENTER => {
@@ -892,7 +912,91 @@ fn scanSampleDirectory(app: *App) void {
 
     if (app.editor_ui.sample_browser.file_count == 0) {
         app.editor_ui.setSampleBrowserError("No audio files found (WAV, AIFF)");
+    } else {
+        const sb = &app.editor_ui.sample_browser;
+        sb.shift_anchor = 0;
+        sb.sel_start = 0;
+        sb.sel_end = 0;
+        app.editor_ui.ensureSampleBrowserRowVisible(0);
     }
+}
+
+/// Import a contiguous range of entries from the sample browser (inclusive indices)
+fn importSampleBrowserFilesInRange(app: *App, start: u16, end: u16) void {
+    const sb = &app.editor_ui.sample_browser;
+    if (sb.file_count == 0) return;
+
+    const lo = @min(start, end);
+    const hi = @max(start, end);
+    const hi_clamped = @min(hi, sb.file_count - 1);
+    if (lo >= sb.file_count) return;
+
+    const base_path = app.project.getFilePath();
+    if (base_path.len == 0) {
+        app.editor_ui.showError("No project path set - save project first");
+        return;
+    }
+
+    var imported_count: usize = 0;
+    var last_sample_idx: ?u16 = null;
+
+    var i: u16 = lo;
+    while (i <= hi_clamped) : (i += 1) {
+        const file_path = sb.files[i].getPath();
+        if (file_path.len == 0) continue;
+
+        const import_result = spdsx_io.importAudioFile(
+            app.allocator,
+            app.io,
+            file_path,
+            base_path,
+            &app.project.sample_library,
+        );
+
+        if (!import_result.success) {
+            if (import_result.error_message) |msg| {
+                app.editor_ui.showError(msg);
+            } else {
+                app.editor_ui.showError("Failed to import audio file");
+            }
+            return;
+        }
+
+        imported_count += 1;
+        last_sample_idx = import_result.sample_index;
+    }
+
+    if (imported_count == 0) return;
+
+    app.editor_ui.invalidateSampleUsageCache();
+    if (last_sample_idx) |idx| {
+        app.editor_ui.selected_wave = idx;
+    }
+
+    if (imported_count == 1) {
+        app.editor_ui.showSuccess("Sample imported to library");
+    } else {
+        if (std.fmt.bufPrint(
+            app.import_batch_success_msg[0..],
+            "Imported {d} samples",
+            .{imported_count},
+        )) |printed| {
+            app.import_batch_success_msg_len = printed.len;
+        } else |_| {
+            const fallback = "Imported samples";
+            @memcpy(app.import_batch_success_msg[0..fallback.len], fallback);
+            app.import_batch_success_msg_len = fallback.len;
+        }
+    }
+
+    app.editor_ui.closeSampleBrowser();
+    app.audio_player.stop();
+}
+
+fn loadAllSamplesFromBrowser(app: *App) void {
+    const n = app.editor_ui.sample_browser.file_count;
+    if (n == 0) return;
+    importSampleBrowserFilesInRange(app, 0, n - 1);
 }
 
 /// Play the currently selected sample in the browser
@@ -915,49 +1019,14 @@ fn playSelectedSample(app: *App) void {
     };
 }
 
-/// Load the selected sample into the project's sample library (wave list)
+/// Load the selected range of samples into the project's sample library (wave list)
 /// Pad assignment is done separately via drag & drop from the wave list
 fn loadSelectedSample(app: *App) void {
-    const file = app.editor_ui.getSelectedSampleFile() orelse return;
-    const file_path = file.getPath();
+    const sb = &app.editor_ui.sample_browser;
+    if (sb.file_count == 0) return;
+    if (sb.sel_start >= sb.file_count or sb.sel_end >= sb.file_count) return;
 
-    if (file_path.len == 0) return;
-
-    // Get the base path for the SPD-SX configuration
-    const base_path = app.project.getFilePath();
-    if (base_path.len == 0) {
-        app.editor_ui.showError("No project path set - save project first");
-        return;
-    }
-
-    // Import the audio file (converts to 44.1kHz 16-bit and copies to WAVE/DATA)
-    const import_result = spdsx_io.importAudioFile(
-        app.allocator,
-        app.io,
-        file_path,
-        base_path,
-        &app.project.sample_library,
-    );
-
-    if (!import_result.success) {
-        if (import_result.error_message) |msg| {
-            app.editor_ui.showError(msg);
-        } else {
-            app.editor_ui.showError("Failed to import audio file");
-        }
-        return;
-    }
-
-    // Select the newly added wave in the wave list
-    if (import_result.sample_index) |idx| {
-        app.editor_ui.selected_wave = idx;
-        app.editor_ui.showSuccess("Sample imported to library");
-    }
-
-    app.editor_ui.invalidateSampleUsageCache();
-
-    // Close the browser
-    app.editor_ui.closeSampleBrowser();
+    importSampleBrowserFilesInRange(app, sb.sel_start, sb.sel_end);
 }
 
 /// Play the sample from a specific pad
@@ -1014,6 +1083,11 @@ fn deleteWave(app: *App, wave_index: u16) void {
 
 fn update(app: *App, delta: f32) void {
     app.editor_ui.update(delta);
+
+    if (app.import_batch_success_msg_len > 0) {
+        app.editor_ui.showSuccess(app.import_batch_success_msg[0..app.import_batch_success_msg_len]);
+        app.import_batch_success_msg_len = 0;
+    }
 
     // Check if we should unfocus text field (clicked outside)
     if (app.editor_ui.shouldUnfocusTextField()) {
@@ -1133,6 +1207,9 @@ fn draw(app: *App, width: c_int, height: c_int) void {
         }
         if (sample_action.load_selected) {
             loadSelectedSample(app);
+        }
+        if (sample_action.load_all) {
+            loadAllSamplesFromBrowser(app);
         }
         if (sample_action.close) {
             app.editor_ui.closeSampleBrowser();

@@ -118,6 +118,8 @@ pub const InputState = struct {
     mouse_down: bool = false,
     mouse_clicked: bool = false,
     mouse_right_clicked: bool = false,
+    /// SDL key modifier mask (e.g. KMOD_SHIFT) from SDL_GetModState, updated each frame
+    key_mod: u16 = 0,
 };
 
 /// Text input/editing state
@@ -254,7 +256,10 @@ pub const SampleBrowserState = struct {
     path: models.BoundedString(256) = .{},
     files: [128]SampleFileEntry = undefined,
     file_count: u16 = 0,
-    selected: u16 = 0,
+    /// Inclusive range [sel_start, sel_end]; shift+click extends from shift_anchor
+    sel_start: u16 = 0,
+    sel_end: u16 = 0,
+    shift_anchor: u16 = 0,
     scroll: i32 = 0,
     max_scroll: i32 = 0,
     scanning: bool = false,
@@ -294,8 +299,8 @@ pub const SampleBrowserState = struct {
     }
 
     pub fn getSelectedFile(self: *const SampleBrowserState) ?*const SampleFileEntry {
-        if (self.selected >= self.file_count) return null;
-        return &self.files[self.selected];
+        if (self.file_count == 0 or self.sel_start >= self.file_count) return null;
+        return &self.files[self.sel_start];
     }
 
     /// Initialize path with home directory if not already set
@@ -316,6 +321,7 @@ pub const SampleBrowserAction = struct {
     scan_path: bool = false,
     play_selected: bool = false,
     load_selected: bool = false,
+    load_all: bool = false,
     close: bool = false,
 };
 
