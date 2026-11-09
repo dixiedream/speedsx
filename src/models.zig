@@ -159,16 +159,16 @@ pub const OutputAssign = enum(u8) {
     master_out = 0,
     sub_out = 1,
     phones = 2,
-    individual_1 = 3,
-    individual_2 = 4,
+    kit_fx_1 = 3,
+    kit_fx_2 = 4,
 
     pub fn toString(self: OutputAssign) []const u8 {
         return switch (self) {
             .master_out => "MASTER OUT",
             .sub_out => "SUB OUT",
             .phones => "PHONES",
-            .individual_1 => "INDIV 1",
-            .individual_2 => "INDIV 2",
+            .kit_fx_1 => "KIT FX 1",
+            .kit_fx_2 => "KIT FX 2",
         };
     }
 };
